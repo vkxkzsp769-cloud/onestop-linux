@@ -24,6 +24,8 @@ BOOTSTRAP_SHA256="9ddc32921187c85b04556bf56c6cce94e00b813ecd9299959a2d9b7c333869
 UBUNTU_BASE_VER="24.04.5"
 UBUNTU_BASE_URL="https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-${UBUNTU_BASE_VER}-base-arm64.tar.gz"
 UBUNTU_BASE_SHA256="a91d5a93010193712d346d761372b7c9db6dfcf093893161c64ca107f05914f2"
+# 不再重压为 tar.zst：真机实证 Termux 的 zstd 因缺 libzstd.so.1 无法执行，
+# 而 bootstrap 的 GNU tar 支持 -z，直接内置官方 .tar.gz 更少依赖、更可靠。
 
 TERMUX_APT="https://packages-cf.termux.dev/apt/termux-main"
 PROOT_DEB="pool/main/p/proot/proot_5.1.107.95_aarch64.deb"
@@ -82,10 +84,11 @@ cp -f "$BS" "$ASSETS/bootstrap/bootstrap-aarch64.zip"
 UB="$CACHE/ubuntu-base-${UBUNTU_BASE_VER}-base-arm64.tar.gz"
 dl "$UBUNTU_BASE_URL" "$UB"
 verify "$UB" "$UBUNTU_BASE_SHA256"
-log "重压为 tar.zst（zstd -19）"
-gzip -dc "$UB" | zstd -19 --long=27 -T0 -q -f -o "$CACHE/ubuntu-24.04-base-arm64.tar.zst"
-mv -f "$CACHE/ubuntu-24.04-base-arm64.tar.zst" "$ASSETS/rootfs/ubuntu-24.04-base-arm64.tar.zst"
-( cd "$ASSETS/rootfs" && sha256sum ubuntu-24.04-base-arm64.tar.zst > SHA256SUMS )
+# 原样内置官方 tarball（App 侧用 bootstrap 的 GNU tar -xzf 解压）
+ROOTFS_NAME="ubuntu-base-${UBUNTU_BASE_VER}-base-arm64.tar.gz"
+rm -f "$ASSETS/rootfs"/*.tar.zst "$ASSETS/rootfs"/*.tar.gz
+cp -f "$UB" "$ASSETS/rootfs/$ROOTFS_NAME"
+( cd "$ASSETS/rootfs" && sha256sum "$ROOTFS_NAME" > SHA256SUMS && cat SHA256SUMS )
 
 # ---------------- 3. proot / loader / talloc（Termux 官方 deb）----------------
 for spec in "$PROOT_DEB|$PROOT_DEB_SHA256" "$TALLOC_DEB|$TALLOC_DEB_SHA256" "$SHMEM_DEB|$SHMEM_DEB_SHA256"; do
@@ -122,16 +125,26 @@ cp -f "$PROOT_BIN" "$JNI/libproot.so"
 cp -f "$LD_BIN"   "$JNI/libproot-loader.so"
 chmod +x "$JNI/libproot.so" "$JNI/libproot-loader.so"
 
+# ★ 真机实证：proot 启动时报 `CANNOT LINK EXECUTABLE: library "libtalloc.so.2" not found`
+#   后接 `library "libandroid-shmem.so" not found`。Android 上动态链接器只信任 nativeLibraryDir，
+#   因此这两个库必须放进 jniLibs（文件名保持 *.so 才能被 PackageManager 识别为原生库）。
 TALLOC_EX="$CACHE/extract/$(basename "$TALLOC_DEB")"
-TALLOC_SO="$(find "$TALLOC_EX" -type f -name 'libtalloc.so*' | head -1)"
+TALLOC_SO="$(find "$TALLOC_EX" -type f -name 'libtalloc.so.2.*' -o -type f -name 'libtalloc.so.2' | head -1)"
+[ -n "$TALLOC_SO" ] || TALLOC_SO="$(find "$TALLOC_EX" -type f -name 'libtalloc.so*' -size +1k | head -1)"
 [ -n "$TALLOC_SO" ] || fail "未在 libtalloc deb 中找到 libtalloc.so"
+cp -f "$TALLOC_SO" "$JNI/libtalloc.so"
 cp -f "$TALLOC_SO" "$ASSETS/runtime/libtalloc.so.2"
+
+SHMEM_EX="$CACHE/extract/$(basename "$SHMEM_DEB")"
+SHMEM_SO="$(find "$SHMEM_EX" -type f -name 'libandroid-shmem.so' -size +1k | head -1)"
+[ -n "$SHMEM_SO" ] || fail "未在 libandroid-shmem deb 中找到 .so"
+cp -f "$SHMEM_SO" "$JNI/libandroid-shmem.so"
 
 # ---------------- 4. 产物报告 ----------------
 log "产物清单"
 for f in "$ASSETS/bootstrap/bootstrap-aarch64.zip" \
-         "$ASSETS/rootfs/ubuntu-24.04-base-arm64.tar.zst" \
-         "$JNI/libproot.so" "$JNI/libproot-loader.so" "$ASSETS/runtime/libtalloc.so.2"; do
+         "$ASSETS/rootfs/$ROOTFS_NAME" \
+         "$JNI/libproot.so" "$JNI/libproot-loader.so" "$JNI/libtalloc.so" "$JNI/libandroid-shmem.so"; do
   printf '  %-64s %s\n' "${f#$ROOT/}" "$(du -h "$f" | cut -f1)"
 done
 

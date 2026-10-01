@@ -70,12 +70,19 @@ object ProotCommandBuilder {
         "LC_ALL" to "C.UTF-8",
         "PATH" to "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "TMPDIR" to "/tmp",
-        // proot 自身需要的运行时变量（方案 §12.3.1）
+        // proot 自身需要的运行时变量（真机实证后修正）
         "PROOT_TMP_DIR" to Environment.prootTmpDir(ctx).absolutePath,
-        // loader 必须与 proot 一起放在 nativeLibraryDir（唯一「可执行」的私有目录）：
-        // 实测 Termux deb 内路径为 usr/libexec/proot/loader，CI 中重命名为 libproot-loader.so 落到 jniLibs/
+        // loader 必须与 proot 同目录（nativeLibraryDir 是唯一「可执行」的私有目录）。
+        // 真机实证：Termux deb 内为 usr/libexec/proot/loader，CI 中重命名为 libproot-loader.so 落到 jniLibs/
         "PROOT_LOADER" to File(ctx.applicationInfo.nativeLibraryDir, "libproot-loader.so").absolutePath,
-        "LD_LIBRARY_PATH" to Environment.usrLib(ctx).absolutePath
+        // ★ 关键：proot 依赖 libtalloc.so.2 与 libandroid-shmem.so，
+        //   真机实测这两者缺失时报 `CANNOT LINK EXECUTABLE`。
+        //   二者已随 jniLibs 安装到 nativeLibraryDir，故 LD_LIBRARY_PATH 必须**首位**指向它。
+        //   （usr/lib 仍需保留，供容器内进程使用）
+        "LD_LIBRARY_PATH" to listOf(
+            ctx.applicationInfo.nativeLibraryDir,
+            Environment.usrLib(ctx).absolutePath,
+        ).joinToString(":")
     )
 
     /** 在容器内执行一条命令（用于 post-install、GPU 探测等一次性任务）。 */

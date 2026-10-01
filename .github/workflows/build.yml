@@ -56,9 +56,11 @@ jobs:
         run: |
           set -e
           test -s app/src/main/assets/bootstrap/bootstrap-aarch64.zip
-          test -s app/src/main/assets/rootfs/ubuntu-24.04-base-arm64.tar.zst
+          test -s app/src/main/assets/rootfs/ubuntu-base-24.04.5-base-arm64.tar.gz
           test -s app/src/main/jniLibs/arm64-v8a/libproot.so
           test -s app/src/main/jniLibs/arm64-v8a/libproot-loader.so
+          test -s app/src/main/jniLibs/arm64-v8a/libtalloc.so
+          test -s app/src/main/jniLibs/arm64-v8a/libandroid-shmem.so
           echo "--- proot 二进制架构（必须是 Android ARM64 可执行文件）---"
           file app/src/main/jniLibs/arm64-v8a/libproot.so
           readelf -h app/src/main/jniLibs/arm64-v8a/libproot.so | grep -E 'Class|Machine|Type'

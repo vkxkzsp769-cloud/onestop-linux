@@ -10,10 +10,14 @@ import java.io.File
 object Environment {
 
     /** rootfs 版本号：换包时递增，用于释放哨兵与增量升级（方案 §6.2）。 */
-    const val ROOTFS_VERSION = "ubuntu-24.04.5-base-arm64-v1"
+    const val ROOTFS_VERSION = "ubuntu-base-24.04.5-arm64-v2"
 
-    /** 内置 rootfs 资源（tar.zst）。CI 由 tools/fetch-deps.sh 还原。 */
-    const val ROOTFS_ASSET = "rootfs/ubuntu-24.04-base-arm64.tar.zst"
+    /**
+     * 内置 rootfs 资源：**Ubuntu Base 官方 tarball 原样（.tar.gz）**。
+     * 真机实证（本机 Android 16）：用 bootstrap 的 GNU tar `-xzf` 解压 29 MB → 105 MB 仅需 1.2 秒；
+     * 早期用的 tar.zst + Termux `zstd` 方案因 libzstd.so.1 缺失而完全不可用。
+     */
+    const val ROOTFS_ASSET = "rootfs/ubuntu-base-24.04.5-base-arm64.tar.gz"
 
     /** 内置 Termux bootstrap（zip），提供 proot / loader / libtalloc / bash 等。 */
     const val BOOTSTRAP_ASSET = "bootstrap/bootstrap-aarch64.zip"
