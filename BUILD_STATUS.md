@@ -11,10 +11,27 @@
 
 ## CI 运行记录
 
-| # | 提交 | 结果 | 失败/说明 |
+| # | 提交 | 结果 | 失败原因 / 修复 |
 |---|---|---|---|
-| 1 | d136114 | ❌ failure | 「安装构建依赖」步骤：把 `ar` 当成独立包名（Ubuntu 无此包，属 `binutils`） |
-| 2 | 67b0a02 | 运行中 | 已修正 apt 列表；SDK 组件显式化；Gradle 加 `--stacktrace` |
+| 1 | d136114 | ❌ | 「安装构建依赖」：把 `ar` 当独立包名（属 `binutils`） |
+| 2 | 67b0a02 | ❌ | 依赖还原：`libproot-loader.so` 不存在——实测 deb 布局为 `usr/libexec/proot/loader` |
+| 3 | 6642781 | ❌ | `settings.gradle` 第 3 行 `maven()` 未找到——Kotlin DSL 语法配了 Groovy 扩展名 |
+| 4 | 2f6ffeb | ❌ | `app/build.gradle` 第 28 行 `setOf()` 未找到——同一病根 |
+| 5 | f81b572 | ❌ | 把 vendored 模块改名 `.kts` 后，`apply plugin:` 等 Groovy 语法无法被 Kotlin DSL 解析 |
+| 6 | adb4cd9 | ❌ | `terminal-emulator/build.gradle:58` `classifier()` 在 Gradle 8 已移除（→ `archiveClassifier`） |
+| 7 | 79bf4a0 | ❌ | `termux-shared` 需要上游 `markwonVersion`；核对后确认**根本不需要该模块**，移除 |
+| 8 | 4fe4f6c | ❌ | 进入 Kotlin 编译：KDoc 内 `*/` 提前闭合注释 + `log*` 表达式体返回类型不符 |
+| 9 | 8f8bd7c | ✅ **success** | 构建通过，产出 APK |
+
+### CI #9 产物（2026-10-01）
+
+| 产物 | 体积 |
+|---|---|
+| `app-debug.apk` | **64 MB** |
+| `app-release-unsigned.apk` | **62 MB** |
+| artifact `onestop-linux-apk`（含两者，zip 后） | 109 MB |
+
+构建耗时：Gradle 约 2 分 31 秒（首次含依赖下载）。
 
 ## 本机已验证（非编译）
 
