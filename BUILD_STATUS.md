@@ -79,6 +79,46 @@ aarch64
 | 硬链接 | Android FUSE 不允许，tar 对 2 个条目（`perl5.38.2`/`uncompress`）告警但继续完成 |
 | APK 体积构成 | bootstrap.zip 31.3 MB (49%) + rootfs 18.9 MB (30%) + dex 11.7 MB (18%) ≈ 63 MB |
 
+
+## 🔴 真机实测 bug 全清单（vivo V2429A / Android 16 / API 36）
+
+> 每一轮都是「装 APK → 抓 logcat/run-as 取证 → 定位根因 → 修 → CI 重建」，
+> 下面 7 条全部**有实测证据**，其中 4 条是「只有真机才会暴露」的。
+
+| # | 现象 | 根因 | 修法 |
+|---|---|---|---|
+| 1 | `FileNotFoundException: Invalid file path` | Termux 的 `zstd` 无法执行（缺 `libzstd.so.1`），输出 0 字节；**代码未检查子进程退出码**，拿空流继续解析 | 弃用 zstd，改用 bootstrap 的 GNU `tar`；所有子进程都必须检查退出码 |
+| 2 | `FileNotFoundException: rootfs/…tar.gz` | 资产名与 APK 内实际名不符 | 增加候选名兜底 + 明确报错 |
+| 3 | APK 内 rootfs 变成 101.8 MB 的 `.tar` | **AGP 按 `.gz` 后缀嗅探并解压**资产（去掉 `noCompress("tar")` 也没用） | 资产后缀改 `.targz`；运行时**按魔数 1f8b** 判定是否 gzip |
+| 4 | `tar: gzip: Cannot write: Broken pipe` | 对纯 tar 仍传了 `-z` | 按魔数选择 `tar -xz` / `tar -x` |
+| 5 | `CANNOT LINK EXECUTABLE: library "libtalloc.so.2" not found` | `libtalloc.so` **在 APK 里但代码从没拷出来** | `ensureRuntimeLibs()` 启动时复制 |
+| 6 | 同上（改名后仍失败） | **文件名必须等于 SONAME**：文件叫 `libtalloc.so` 满足不了 SONAME `libtalloc.so.2` | 复制为 `libtalloc.so.2` 放私有 lib 目录，并置于 `LD_LIBRARY_PATH` 首位 |
+| 7 | APK 里根本没有 `libtalloc.so.2` | **AGP 只打包匹配 `lib*.so` 的文件**，`libtalloc.so.2` 被静默丢弃 | jniLibs 用 `libtalloc.so` + 运行时改名（与 #6 组合成完整解法） |
+
+另有 1 条产品问题：
+
+| # | 现象 | 修法 |
+|---|---|---|
+| 8 | 终端不弹出软键盘 | TerminalFragment 增加 `isFocusableInTouchMode` + `requestFocus` + 焦点变化触发 + 延时显式 `showSoftInput`，点击时再次触发 |
+
+## ✅ 真机已达成的关键里程碑
+
+| 里程碑 | 证据 |
+|---|---|
+| 非 Root 进 Ubuntu 容器 | `===PROOT_OK=== / PRETTY_NAME="Ubuntu 24.04.5 LTS" / aarch64 / uid=0` |
+| targetSdk 28 在 Android 16 可用 | `nativeLibraryDir` 内 `libproot.so`(247 KB)/`libproot-loader.so`(18 KB)/`libtermux.so` 均已安装且可执行 |
+| 全自动首启释放 rootfs | 日志：`rootfs 释放完成 → …/files/linux/rootfs（大小校验通过：bin/bash 存在）`，实测 105 MB |
+| bootstrap 自动释放 | 日志：`bootstrap 释放完成，条目数=3479` |
+| tar 解压性能 | 29 MB gz → 105 MB，**1.2 秒** |
+
+## APK 体积变化（记录 AGP 行为对体积的影响）
+
+| 版本 | APK | rootfs 资产 |
+|---|---|---|
+| 早期（noCompress 含 tar） | 147 MB | 106 MB 纯 tar |
+| 去掉 noCompress tar | 75 MB | 106 MB 纯 tar |
+| 改后缀 .targz | **73 MB** | **28.55 MB gzip** |
+
 ## 修复后的架构（v2）
 
 ```

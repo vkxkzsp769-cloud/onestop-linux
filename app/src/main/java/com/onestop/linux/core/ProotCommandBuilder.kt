@@ -16,6 +16,35 @@ import java.io.File
  */
 object ProotCommandBuilder {
 
+    /**
+     * 把 nativeLibraryDir 里「文件名与 SONAME 不一致」的库复制到私有目录并按 SONAME 命名。
+     *
+     * 为什么必须这么做（真机实测的坑）：
+     *  - AGP 只打包匹配 `lib*.so` 的文件 → `libtalloc.so.2` 会被静默丢弃，所以 jniLibs 里只能叫 `libtalloc.so`；
+     *  - 动态链接器按 SONAME 查找（proot 需要 `libtalloc.so.2`）→ 文件名 `libtalloc.so` 又满足不了。
+     * 解法即本函数：复制到 `<usr>/lib/libtalloc.so.2`，并把该目录放在 LD_LIBRARY_PATH 首位。
+     * （已在 vivo V2429A / Android 16 上验证：复制后 proot 立即跑通）
+     */
+    fun ensureRuntimeLibs(ctx: Context) {
+        val nativeDir = File(ctx.applicationInfo.nativeLibraryDir)
+        val libDir = Environment.usrLib(ctx).apply { mkdirs() }
+        // 源文件名(在 nativeLibraryDir) → 目标文件名(=SONAME)
+        val alias = mapOf(
+            "libtalloc.so" to "libtalloc.so.2",
+        )
+        alias.forEach { (src, dst) ->
+            val from = File(nativeDir, src)
+            val to = File(libDir, dst)
+            if (!from.isFile) return@forEach
+            if (to.isFile && to.length() == from.length()) return@forEach   // 已就绪
+            runCatching {
+                from.copyTo(to, overwrite = true)
+                to.setReadable(true, false); to.setExecutable(true, false)
+                android.util.Log.i("ProotCommandBuilder", "已就位运行时库: $dst (${to.length()} bytes)")
+            }.onFailure { android.util.Log.w("ProotCommandBuilder", "复制 $src → $dst 失败: ${it.message}") }
+        }
+    }
+
     /** 返回可直接交给 [com.termux.terminal.TerminalSession] 的 argv（首元素必须是可执行文件路径）。 */
     fun loginArgv(ctx: Context, extraArgs: List<String> = emptyList()): List<String> {
         val usr = Environment.usrBin(ctx)
@@ -80,8 +109,8 @@ object ProotCommandBuilder {
         //   二者已随 jniLibs 安装到 nativeLibraryDir，故 LD_LIBRARY_PATH 必须**首位**指向它。
         //   （usr/lib 仍需保留，供容器内进程使用）
         "LD_LIBRARY_PATH" to listOf(
-            ctx.applicationInfo.nativeLibraryDir,
-            Environment.usrLib(ctx).absolutePath,
+            Environment.usrLib(ctx).absolutePath,        // ★ 首位：libtalloc.so.2 的落地处
+            ctx.applicationInfo.nativeLibraryDir,        // 其次：libandroid-shmem.so / libproot-loader.so
         ).joinToString(":")
     )
 

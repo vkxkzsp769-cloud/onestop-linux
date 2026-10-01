@@ -15,6 +15,7 @@ import com.google.android.material.tabs.TabLayoutMediator
 import com.onestop.linux.core.AppEvent
 import com.onestop.linux.core.BootstrapInstaller
 import com.onestop.linux.core.EventBus
+import com.onestop.linux.core.ProotCommandBuilder
 import com.onestop.linux.core.ProotRunner
 import com.onestop.linux.core.RootfsInstaller
 import com.onestop.linux.core.ServiceDetector
@@ -76,6 +77,8 @@ class MainActivity : AppCompatActivity() {
                         EventBus.emit(AppEvent.ContainerState("首次启动：正在释放运行环境…", false))
                         BootstrapInstaller.install(applicationContext)
                     }
+                    // 必须在任何 ProotRunner/TerminalSession 之前：把 libtalloc.so 复制成 libtalloc.so.2
+                    ProotCommandBuilder.ensureRuntimeLibs(applicationContext)
                     if (!RootfsInstaller.isInstalled(applicationContext)) {
                         EventBus.emit(AppEvent.ContainerState("首次启动：正在释放 Ubuntu 24.04…", false))
                         RootfsInstaller.install(applicationContext)
