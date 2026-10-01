@@ -259,12 +259,12 @@ class MainActivity : AppCompatActivity() {
             val report = withContext(Dispatchers.IO) {
                 val sb = StringBuilder()
                 sb.appendLine("=== 环境自检 ===")
-                sb.appendLine("bootstrap: ${com.onestop.linux.core.BootstrapInstaller.isInstalled(applicationContext)}")
+                sb.appendLine("bootstrap(bin/tar): ${com.onestop.linux.core.BootstrapInstaller.isInstalled(applicationContext)}")
                 sb.appendLine("rootfs: ${com.onestop.linux.core.RootfsInstaller.isInstalled(applicationContext)}")
                 runCatching { com.onestop.linux.core.ProotCommandBuilder.ensureRuntimeLibs(applicationContext) }
                 // Environment.usrLib() 已返回 File，不要再套一层构造函数（曾因此编译失败）
                 val usrLib: java.io.File = com.onestop.linux.core.Environment.usrLib(applicationContext)
-                listOf("libtalloc.so.2", "libandroid-shmem.so").forEach { libName ->
+                listOf("libtalloc.so.2", "libandroid-shmem.so", "libproot-loader.so").forEach { libName ->
                     val f = java.io.File(usrLib, libName)
                     sb.appendLine("usr/lib/$libName 存在=${f.isFile} 大小=${f.length()}")
                 }

@@ -20,10 +20,18 @@ object BootstrapInstaller {
 
     private const val TAG = "BootstrapInstaller"
 
+    /**
+     * 判定 bootstrap 是否就绪。
+     *
+     * 修正（真机日志暴露的假阴性）：早期用 `bin/proot` 判定，但 **Termux 的 bootstrap 并不包含 proot**
+     * （proot 由 Termux 的 deb 包提供，我们是从 jniLibs 走 nativeLibraryDir 的），
+     * 于是日志里一直出现 `bootstrap=false bin/proot=false bin/tar=true` 这种自相矛盾的结论。
+     * 现在以 bootstrap 真正提供的、且我们确实依赖的 `bin/tar` 为准。
+     */
     fun isInstalled(ctx: Context): Boolean {
-        val proot = File(Environment.usrBin(ctx), "proot")
-        val loader = File(Environment.usrLib(ctx), "libproot-loader.so")
-        return proot.isFile && loader.isFile
+        val tar = File(Environment.usrBin(ctx), "tar")
+        val lib = Environment.usrLib(ctx)
+        return tar.isFile && lib.isDirectory
     }
 
     /** @return 解出的条目数；失败抛异常，由调用方展示。 */

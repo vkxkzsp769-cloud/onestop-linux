@@ -119,6 +119,42 @@ aarch64
 | 去掉 noCompress tar | 75 MB | 106 MB 纯 tar |
 | 改后缀 .targz | **73 MB** | **28.55 MB gzip** |
 
+
+## 🔴 卡顿根因（由应用内日志导出定位，2026-10-02）
+
+用户反馈「终端反应迟钝、跟手差」。日志（`log/onestop-log-20261002_075737.txt`）给出决定性证据：
+
+```
+07:57:11.622 [session] TerminalEmulator[size=74x33]   ← 键盘弹出：68 行 → 33 行
+07:57:17.246 [session] TerminalEmulator[size=74x68]   ← 键盘收起：33 行 → 68 行
+07:57:18.514 [session] TerminalEmulator[size=74x33]   ← 又弹
+07:57:30.125 [session] TerminalEmulator[size=74x68]   ← 再收
+```
+
+而 PRoot 本身**很快**：`[proc] [proot] 退出码=0 耗时=104ms / 102ms / 108ms`。
+
+### 结论
+**卡顿不是 PRoot 慢，而是终端尺寸反复抖动**：软键盘弹收 → `TerminalView.updateSize()` →
+行数在 68↔33 之间来回变 → 每次都要**重排整屏**并向 shell 发 `SIGWINCH` →
+用户敲的键要等这一轮重绘完成才回显。
+
+### 根因与修法
+| 问题 | 根因 | 修法 |
+|---|---|---|
+| 尺寸抖动 | `TerminalFragment` 在 `onFocusChange` 与 `postDelayed(300ms)` 两处**反复调用 showSoftInput** | 只保留一次性 `requestFocus()`，键盘交给用户点击/系统策略（与 Termux 一致） |
+| 可用堆过小 | 日志快照显示 `可用内存: 3MB / 256MB` | Manifest 加 `android:largeHeap="true"`；`configChanges` 对齐 Termux（补 keyboard/navigation） |
+| 日志本身可能干扰 | 会话抓屏节流 400ms，快速输出时持续写盘 | 放宽到 2s + 内容去重 |
+| 自检假阴性 | `BootstrapInstaller.isInstalled` 用 `bin/proot` 判定，但**bootstrap 不含 proot**（proot 来自 jniLibs），导致日志长期显示 `bootstrap=false` 而实际 `bin/tar=true` | 改用 `bin/tar` 判定 |
+
+### 阶段 1 已确认达成（同一份日志的证据）
+```
+[app] [Rootfs] 释放完成（bin/bash 校验通过）
+[proc] [stdout] post-install OK: PRETTY_NAME="Ubuntu 24.04.5 LTS"
+[proc] [proot] 退出码=0 耗时=103ms
+[proc] [stdout] aarch64
+[proc] [stdout] 0            ← uid=0（PRoot 映射）
+```
+
 ## 修复后的架构（v2）
 
 ```

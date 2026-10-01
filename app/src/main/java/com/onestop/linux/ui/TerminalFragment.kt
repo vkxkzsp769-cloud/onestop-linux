@@ -52,11 +52,12 @@ class TerminalFragment : Fragment() {
         tv.setTextSize(28)
 
         if (session == null) startSession()
-        // 让终端拿到焦点并主动拉起软键盘（真机反馈：不主动触发时键盘不弹出）
+        // ★ 性能修复（真机日志证据）：曾在此处「焦点变化触发 + postDelayed 300ms」各调一次
+        //   showSoftInput，导致软键盘反复弹收 → TerminalView.updateSize() 在 68↔33 行之间抖动
+        //   → 每次重排整屏并向 shell 发 SIGWINCH，表现为「敲键后很久才回显」。
+        //   现在只保留「一次性 requestFocus」，键盘由用户点击或系统策略弹出（与 Termux 行为一致）。
         tv.isFocusableInTouchMode = true
         tv.requestFocus()
-        tv.setOnFocusChangeListener { v, hasFocus -> if (hasFocus) showIme(v) }
-        view.postDelayed({ showIme(tv) }, 300)
     }
 
     /** 显式请求软键盘（TerminalView 是 InputConnection 宿主，但仍需一次显式触发）。 */
@@ -143,9 +144,10 @@ class TerminalFragment : Fragment() {
         override fun onTextChanged(changedSession: TerminalSession) {
             // 把终端屏幕内容作为「会话日志」采集：这是唯一能看到容器内发生什么的方式。
             // TerminalSession 没有公开 screen 字段，正确 API 是 getEmulator().toString()（Termux 复制全文用的就是它）。
-            // onTextChanged 触发非常频繁，故做 400ms 节流 + 与上次内容去重，避免刷爆 IO。
+            // onTextChanged 触发非常频繁（每次输出都会调），故做 2s 节流 + 内容去重，
+            // 避免日志本身成为性能负担（早期 400ms 节流在快速输出时会持续写盘）。
             val now = android.os.SystemClock.elapsedRealtime()
-            if (now - lastScreenDump < 400) return
+            if (now - lastScreenDump < 2000) return
             lastScreenDump = now
             runCatching {
                 val text = changedSession.emulator?.toString().orEmpty()
