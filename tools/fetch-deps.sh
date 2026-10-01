@@ -96,16 +96,27 @@ for spec in "$PROOT_DEB|$PROOT_DEB_SHA256" "$TALLOC_DEB|$TALLOC_DEB_SHA256" "$SH
   ex="$CACHE/extract/$(basename "$rel")"
   rm -rf "$ex"; mkdir -p "$ex"
   ( cd "$ex" && ar x "$deb" && tar -xf data.tar.* 2>/dev/null || true )
+  log "  $(basename "$deb") 内共 $(find "$ex" -type f | wc -l) 个文件"
 done
 
-# proot 主程序与 loader：Termux 包内位于 usr/bin/proot 与 usr/lib/libproot-loader.so
+# proot 主程序与 loader 的真实布局（已实测 proot_5.1.107.95_aarch64.deb）：
+#   data/data/com.termux/files/usr/bin/proot              主程序
+#   data/data/com.termux/files/usr/libexec/proot/loader   64 位 loader（不是 libproot-loader.so！）
+#   data/data/com.termux/files/usr/libexec/proot/loader32 32 位 loader（arm64 不需要，跳过）
 PROOT_EX="$CACHE/extract/$(basename "$PROOT_DEB")"
-[ -f "$PROOT_EX/data/data/com.termux/files/usr/bin/proot" ] \
-  && PROOT_BIN="$PROOT_EX/data/data/com.termux/files/usr/bin/proot" \
-  || PROOT_BIN="$(find "$PROOT_EX" -type f -name proot | head -1)"
-LD_BIN="$(find "$PROOT_EX" -type f -name 'libproot-loader.so' | head -1)"
-[ -n "${PROOT_BIN:-}" ] || fail "未在 proot deb 中找到 proot 可执行文件"
-[ -n "${LD_BIN:-}" ]   || fail "未在 proot deb 中找到 libproot-loader.so"
+PROOT_PREFIX="$PROOT_EX/data/data/com.termux/files/usr"
+PROOT_BIN="$PROOT_PREFIX/bin/proot"
+LD_BIN="$PROOT_PREFIX/libexec/proot/loader"
+[ -f "$PROOT_BIN" ] || PROOT_BIN="$(find "$PROOT_EX" -type f -name proot -perm -u+x | head -1)"
+[ -f "$LD_BIN" ]   || LD_BIN="$(find "$PROOT_EX" -type f -path '*libexec/proot/loader' | head -1)"
+if [ ! -f "${PROOT_BIN:-/nonexistent}" ]; then
+  fail "未在 proot deb 中找到 proot 可执行文件；deb 内容：\n$(find "$PROOT_EX" -type f | head -20)"
+fi
+if [ ! -f "${LD_BIN:-/nonexistent}" ]; then
+  fail "未在 proot deb 中找到 loader（期望 usr/libexec/proot/loader）；deb 内容：\n$(find "$PROOT_EX" -type f | head -20)"
+fi
+log "proot 布局确认：${PROOT_BIN#$PROOT_EX/}"
+log "loader 布局确认：${LD_BIN#$PROOT_EX/}"
 
 cp -f "$PROOT_BIN" "$JNI/libproot.so"
 cp -f "$LD_BIN"   "$JNI/libproot-loader.so"

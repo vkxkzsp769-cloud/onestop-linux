@@ -110,4 +110,13 @@ jobs:
           path: |
             **/build/reports/**
             app/build/outputs/logs/**
+            app/build/tmp/kotlin-classes/**
           if-no-files-found: ignore
+
+      - name: 编译失败时打印 Kotlin 错误摘要
+        if: failure()
+        run: |
+          echo "=== 查找编译错误（Kotlin/Java）==="
+          find . -name "*.log" -path "*build*" -exec tail -60 {} \; 2>/dev/null | grep -iE "error:|e: |Unresolved|不能" | head -60 || true
+          echo "=== gradle 输出摘要 ==="
+          ./gradlew --no-daemon :app:compileDebugKotlin --stacktrace 2>&1 | grep -E "^e:|error:|FAILURE|What went wrong" -A3 | head -60 || true

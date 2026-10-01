@@ -19,7 +19,11 @@ object ProotCommandBuilder {
     /** 返回可直接交给 [com.termux.terminal.TerminalSession] 的 argv（首元素必须是可执行文件路径）。 */
     fun loginArgv(ctx: Context, extraArgs: List<String> = emptyList()): List<String> {
         val usr = Environment.usrBin(ctx)
-        val proot = File(usr, "proot")
+        // proot 优先取 nativeLibraryDir（PackageManager 会把它解压为可执行文件，
+        // 见方案 ADR-003 / §12.3.1）；bootstrap 内的副本仅作兜底。
+        val proot = File(ctx.applicationInfo.nativeLibraryDir, "libproot.so")
+            .takeIf { it.isFile && it.canExecute() }
+            ?: File(usr, "proot")
         val tmpDir = Environment.prootTmpDir(ctx).apply { mkdirs() }
         val rootfs = Environment.rootfsDir(ctx)
         val base = Environment.baseDir(ctx)
@@ -68,7 +72,9 @@ object ProotCommandBuilder {
         "TMPDIR" to "/tmp",
         // proot 自身需要的运行时变量（方案 §12.3.1）
         "PROOT_TMP_DIR" to Environment.prootTmpDir(ctx).absolutePath,
-        "PROOT_LOADER" to File(Environment.usrLib(ctx), "libproot-loader.so").absolutePath,
+        // loader 必须与 proot 一起放在 nativeLibraryDir（唯一「可执行」的私有目录）：
+        // 实测 Termux deb 内路径为 usr/libexec/proot/loader，CI 中重命名为 libproot-loader.so 落到 jniLibs/
+        "PROOT_LOADER" to File(ctx.applicationInfo.nativeLibraryDir, "libproot-loader.so").absolutePath,
         "LD_LIBRARY_PATH" to Environment.usrLib(ctx).absolutePath
     )
 
