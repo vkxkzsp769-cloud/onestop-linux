@@ -16,7 +16,7 @@ android {
         targetSdk = 28
         versionCode = 1
         versionName = "0.1.0-mvp"
-        ndk { abiFilters += "arm64-v8a" }   // 固定仅 ARM64
+        ndk { abiFilters += "arm64-v8a" }          // 固定仅 ARM64
     }
 
     // 关键：不要压缩 .so，且安装时解压到 nativeLibraryDir（方案 §4.3）
@@ -25,7 +25,12 @@ android {
             useLegacyPackaging = true
         }
         resources {
-            excludes += setOf("META-INF/*.kotlin_module", "META-INF/DEPENDENCIES")
+            excludes += setOf(
+                "META-INF/*.kotlin_module",
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE*",
+                "META-INF/NOTICE*",
+            )
         }
     }
     androidResources {

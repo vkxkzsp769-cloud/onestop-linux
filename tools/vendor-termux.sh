@@ -47,11 +47,16 @@ for m in terminal-emulator terminal-view termux-shared; do
   log "vendor $m"
   rm -rf "$ROOT/$m"
   cp -a "$SRC/$m" "$ROOT/$m"
+  # 统一为 Kotlin DSL：上游是 Groovy 的 build.gradle，但我们后面要插入 Kotlin 语法的
+  # 裁剪代码（files {} 等），混用两种 DSL 容易出错，故重命名为 .kts 后再打补丁。
+  if [ -f "$ROOT/$m/build.gradle" ]; then
+    mv "$ROOT/$m/build.gradle" "$ROOT/$m/build.gradle.kts"
+  fi
 done
 
 # ---------------- 补丁 1/2：namespace + compileSdk ----------------
 patch_ns() { # patch_ns <module> <namespace>
-  local m="$1" ns="$2" f="$ROOT/$1/build.gradle"
+  local m="$1" ns="$2" f="$ROOT/$1/build.gradle.kts"
   [ -f "$f" ] || { echo "缺少 $f"; exit 1; }
   # 1) namespace：插到 android { 之后
   if ! grep -q "namespace" "$f"; then
@@ -76,7 +81,7 @@ patch_ns termux-shared     com.termux.shared
 
 # ---------------- 补丁 3：移除 maven-publish ----------------
 for m in terminal-emulator terminal-view termux-shared; do
-  f="$ROOT/$m/build.gradle"
+  f="$ROOT/$m/build.gradle.kts"
   python3 - "$f" <<'PY'
 import re, sys
 p = sys.argv[1]
@@ -99,7 +104,7 @@ PY
 done
 
 # ---------------- 补丁 4：termux-shared 的依赖裁剪（仅保留被终端链路使用的部分）----------------
-SHARED_GRADLE="$ROOT/termux-shared/build.gradle"
+SHARED_GRADLE="$ROOT/termux-shared/build.gradle.kts"
 if [ -f "$SHARED_GRADLE" ]; then
   python3 - "$SHARED_GRADLE" <<'PY'
 import sys
@@ -119,5 +124,5 @@ fi
 
 log "vendor 完成，模块就位："
 for m in terminal-emulator terminal-view termux-shared; do
-  printf '  %-20s %s\n' "$m" "$(grep -m1 namespace "$ROOT/$m/build.gradle" | tr -d ' ' || echo '(无 namespace)')"
+  printf '  %-20s %s\n' "$m" "$(grep -m1 namespace "$ROOT/$m/build.gradle.kts" | tr -d ' ' || echo '(无 namespace)')"
 done
