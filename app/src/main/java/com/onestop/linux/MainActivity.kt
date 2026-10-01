@@ -262,10 +262,11 @@ class MainActivity : AppCompatActivity() {
                 sb.appendLine("bootstrap: ${com.onestop.linux.core.BootstrapInstaller.isInstalled(applicationContext)}")
                 sb.appendLine("rootfs: ${com.onestop.linux.core.RootfsInstaller.isInstalled(applicationContext)}")
                 runCatching { com.onestop.linux.core.ProotCommandBuilder.ensureRuntimeLibs(applicationContext) }
-                val usrLib = java.io.File(com.onestop.linux.core.Environment.usrLib(applicationContext))
-                listOf("libtalloc.so.2", "libandroid-shmem.so").forEach {
-                    val f = java.io.File(usrLib, it)
-                    sb.appendLine("usr/lib/$it 存在=${f.isFile} 大小=${f.length()}")
+                // Environment.usrLib() 已返回 File，不要再套一层构造函数（曾因此编译失败）
+                val usrLib: java.io.File = com.onestop.linux.core.Environment.usrLib(applicationContext)
+                listOf("libtalloc.so.2", "libandroid-shmem.so").forEach { libName ->
+                    val f = java.io.File(usrLib, libName)
+                    sb.appendLine("usr/lib/$libName 存在=${f.isFile} 大小=${f.length()}")
                 }
                 sb.appendLine("--- 容器探针（proot 进容器执行 cat /etc/os-release）---")
                 val r = com.onestop.linux.core.ProotRunner.runInRootfs(
