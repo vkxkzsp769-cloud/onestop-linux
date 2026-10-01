@@ -1,0 +1,16 @@
+# 构建产物
+build/
+.gradle/
+*.apk
+*.aab
+*.ap_
+local.properties
+# 本地下载的第三方资源（由 CI 或 tools/fetch-deps.sh 还原，不入库）
+app/src/main/assets/bootstrap/
+app/src/main/assets/rootfs/
+app/src/main/jniLibs/*/libproot*
+app/src/main/jniLibs/*/libtalloc*
+# IDE
+.idea/
+*.iml
+.DS_Store

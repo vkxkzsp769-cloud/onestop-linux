@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OneStop Linux</string>
+    <string name="tab_terminal">终端</string>
+    <string name="tab_web">网页</string>
+    <string name="setting_auto_switch">检测到 dsh web 后自动切换</string>
+    <string name="notif_channel_name">Linux 会话</string>
+    <string name="notif_title">Ubuntu 24.04 会话运行中</string>
+</resources>
