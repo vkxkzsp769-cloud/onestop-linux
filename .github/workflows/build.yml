@@ -27,15 +27,24 @@ jobs:
       - name: 安装构建依赖
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq curl unzip zstd file binutils ar >/dev/null
+          # 注意：`ar` 不是独立包，属 binutils；不要写成单独包名（首次 CI 即因此失败）
+          sudo apt-get install -y -qq --no-install-recommends \
+            curl unzip zstd file binutils xz-utils
+          echo "zstd: $(zstd --version)"
+          echo "unzip: $(unzip -v | head -1)"
 
-      - name: 设置 Android SDK（含 NDK）
+      - name: 设置 Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'cmdline-tools;latest platforms;android-34 build-tools;34.0.0 platform-tools'
 
-      - name: 安装 NDK 与 build-tools
+      - name: 安装 NDK
         run: |
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "ndk;26.1.10909125" "platforms;android-34" "build-tools;34.0.0" "cmake;3.22.1" >/dev/null
+          sdkmanager "ndk;26.1.10909125" | tail -3
+          echo "--- 已安装 SDK 组件 ---"
+          sdkmanager --list_installed | head -20
+          echo "ANDROID_HOME=$ANDROID_HOME"
 
       - name: vendor Termux 终端三模块（含 AGP8 补丁）
         run: bash tools/vendor-termux.sh
@@ -68,7 +77,7 @@ jobs:
       - name: 构建 Debug APK
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon :app:assembleDebug
+          ./gradlew --no-daemon --stacktrace :app:assembleDebug
 
       - name: 构建 Release APK（未签名，供后续签名）
         run: ./gradlew --no-daemon :app:assembleRelease
