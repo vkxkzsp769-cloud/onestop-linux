@@ -134,8 +134,10 @@ TALLOC_EX="$CACHE/extract/$(basename "$TALLOC_DEB")"
 TALLOC_SO="$(find "$TALLOC_EX" -type f -name 'libtalloc.so.2.*' -o -type f -name 'libtalloc.so.2' | head -1)"
 [ -n "$TALLOC_SO" ] || TALLOC_SO="$(find "$TALLOC_EX" -type f -name 'libtalloc.so*' -size +1k | head -1)"
 [ -n "$TALLOC_SO" ] || fail "未在 libtalloc deb 中找到 libtalloc.so"
-cp -f "$TALLOC_SO" "$JNI/libtalloc.so"
-cp -f "$TALLOC_SO" "$ASSETS/runtime/libtalloc.so.2"
+# ★ 真机实证：文件名必须等于其 SONAME（libtalloc.so.2），否则链接器按 SONAME 找不到文件：
+#   CANNOT LINK EXECUTABLE …: library "libtalloc.so.2" not found
+#   （最早曾叫 libtalloc.so，结果启动失败）
+cp -f "$TALLOC_SO" "$JNI/libtalloc.so.2"
 
 SHMEM_EX="$CACHE/extract/$(basename "$SHMEM_DEB")"
 SHMEM_SO="$(find "$SHMEM_EX" -type f -name 'libandroid-shmem.so' -size +1k | head -1)"

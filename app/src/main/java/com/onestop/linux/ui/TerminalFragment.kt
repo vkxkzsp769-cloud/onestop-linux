@@ -49,7 +49,21 @@ class TerminalFragment : Fragment() {
         tv.setTextSize(28)
 
         if (session == null) startSession()
+        // 让终端拿到焦点并主动拉起软键盘（真机反馈：不主动触发时键盘不弹出）
+        tv.isFocusableInTouchMode = true
         tv.requestFocus()
+        tv.setOnFocusChangeListener { v, hasFocus -> if (hasFocus) showIme(v) }
+        view.postDelayed({ showIme(tv) }, 300)
+    }
+
+    /** 显式请求软键盘（TerminalView 是 InputConnection 宿主，但仍需一次显式触发）。 */
+    private fun showIme(view: android.view.View) {
+        runCatching {
+            val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE)
+                    as? android.view.inputmethod.InputMethodManager ?: return@runCatching
+            view.requestFocus()
+            imm.showSoftInput(view, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        }
     }
 
     private fun startSession() {
@@ -94,7 +108,7 @@ class TerminalFragment : Fragment() {
     private val viewClient = object : TerminalViewClient {
         override fun onScale(scale: Float): Float = scale
         override fun onSingleTapUp(e: MotionEvent) {
-            terminalView?.requestFocus()
+            terminalView?.let { it.requestFocus(); showIme(it) }
         }
         override fun shouldBackButtonBeMappedToEscape(): Boolean = false
         override fun shouldEnforceCharBasedInput(): Boolean = true
