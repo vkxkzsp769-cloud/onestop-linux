@@ -42,26 +42,29 @@ object RootfsInstaller {
         tmp.deleteRecursively(); tmp.mkdirs()
         onProgress?.invoke(2)
 
-        // ① 把内置的 .tar.gz 落到磁盘（tar 需要文件输入）
-        val packed = File(ctx.cacheDir, "rootfs.tar.gz")
-        if (!packed.isFile || packed.length() == 0L) {
-            ctx.assets.open(Environment.ROOTFS_ASSET).use { input ->
-                packed.outputStream().use { input.copyTo(it) }
-            }
-        }
-        onProgress?.invoke(20)
-
-        // ② 用 Termux 的 GNU tar 解压（必须先装好 bootstrap）
+        // ① 直接用「assets 流 → tar stdin」解压
+        //    真机踩坑记录：早期版本先把 asset 落盘成 rootfs.tar.gz 再让 tar 读文件，
+        //    但 APK 里该资源会被 AGP 处理成「已解压的 .tar」（见 gradle 的 noCompress 注释），
+        //    导致文件名/内容与代码预期不一致。改为流式管道后与打包方式解耦，更稳。
         val tar = File(Environment.usrBin(ctx), "tar")
         check(tar.isFile) { "bootstrap 未就绪：找不到 ${tar.absolutePath}" }
         tar.setExecutable(true, false)
 
+        // 资产名兜底：不同 AGP 版本可能把 .tar.gz 改名/解压，这里列出候选并选实际存在的
+        val assetName = listOf(
+            Environment.ROOTFS_ASSET,                     // 首选：ubuntu-base-24.04.5-base-arm64.tar.gz
+            Environment.ROOTFS_ASSET.removeSuffix(".gz"), // 兜底：若被 AGP 解压成 .tar
+        ).firstOrNull { name ->
+            runCatching { ctx.assets.open(name).close(); true }.getOrDefault(false)
+        } ?: error("APK 内找不到 rootfs 资源（候选：${Environment.ROOTFS_ASSET} / ${Environment.ROOTFS_ASSET.removeSuffix(".gz")}）")
+        Log.i(TAG, "使用 rootfs 资源: $assetName")
+
         val libDir = Environment.usrLib(ctx).absolutePath
         val pb = ProcessBuilder(
-            tar.absolutePath, "-xzf", packed.absolutePath,
+            tar.absolutePath, "-xz",                 // -z 解 gzip，-x 解归档；从 stdin 读
             "-C", tmp.absolutePath,
-            "--no-same-owner",                 // 非 root，忽略 uid/gid
-            "--warning=no-unknown-keyword",    // PAX 时间戳键告警静音
+            "--no-same-owner",                       // 非 root，忽略 uid/gid
+            "--warning=no-unknown-keyword",          // PAX 时间戳键告警静音
         )
         pb.environment()["LD_LIBRARY_PATH"] = libDir
         pb.environment()["TMPDIR"] = Environment.prootTmpDir(ctx).apply { mkdirs() }.absolutePath
@@ -69,19 +72,29 @@ object RootfsInstaller {
 
         val proc = pb.start()
         val out = StringBuilder()
-        proc.inputStream.bufferedReader().useLines { lines ->
-            lines.forEach { line ->
-                out.append(line).append('\n')
-                Log.i(TAG, "tar: $line")
+        val errThread = Thread {
+            runCatching {
+                proc.inputStream.bufferedReader().useLines { lines ->
+                    lines.forEach { line -> out.append(line).append('\n'); Log.i(TAG, "tar: $line") }
+                }
             }
+        }.apply { isDaemon = true; start() }
+
+        // 把 asset 流喂给 tar 的 stdin
+        ctx.assets.open(assetName).use { input ->
+            proc.outputStream.use { stdin -> input.copyTo(stdin, 1 shl 16) }
         }
+        onProgress?.invoke(70)
+
         val code = proc.waitFor()
-        // ★ 关键修正：必须检查退出码。实测 tar 对 2 个硬链接会返回 2（告警级），但解压是完整的，
-        //   因此这里把「警告/部分失败」与「完全失败」区分开：只要 bin/bash 存在就认为可用。
+        errThread.join(5_000)
+
+        // ★ 关键：必须检查退出码/产物。实测 tar 对 Android FUSE 不支持的 2 个硬链接会返回 2（告警级），
+        //   但解压是完整的，因此以 bin/bash 是否就位判定真实成败。
         val bash = File(tmp, "bin/bash")
         if (!bash.isFile) {
-            tmp.deleteRecursively(); packed.delete()
-            error("rootfs 解压失败（tar exit=$code）：${out.toString().takeLast(600)}")
+            tmp.deleteRecursively()
+            error("rootfs 解压失败（tar exit=$code，asset=$assetName）：${out.toString().takeLast(600)}")
         }
         if (code != 0) {
             Log.w(TAG, "tar 返回 $code（多为 FUSE 不支持硬链接的告警），但 bin/bash 已就绪，继续")
@@ -94,7 +107,6 @@ object RootfsInstaller {
             tmp.copyRecursively(rootfs, overwrite = true)
             tmp.deleteRecursively()
         }
-        packed.delete()
         onProgress?.invoke(96)
 
         // ④ 兜底补执行位（方案 §8.1.3）

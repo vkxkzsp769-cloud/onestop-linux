@@ -34,8 +34,10 @@ android {
         }
     }
     androidResources {
-        // rootfs 的 tar.zst 已是压缩格式，再压缩无收益且拖慢构建
-        noCompress += listOf("zst", "tar", "zip")
+        // ★ 真机踩坑：曾把 "tar" 放进 noCompress，结果 AGP 对 assets 里的 .tar.gz 做内容嗅探，
+        //   在 APK 里把它**解压**成纯 .tar（101.8 MB）并改名，导致运行时按原名找不到资源。
+        //   现在只排除本身已是压缩格式、且不参与嗅探重命名的扩展名。
+        noCompress += listOf("zst", "zip")
     }
 
     buildTypes {
