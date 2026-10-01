@@ -101,6 +101,24 @@ PY
   log "  移除 publishing 块: $m"
 done
 
+# ---------------- 补丁 3b：Gradle 8 兼容（classifier → archiveClassifier）----------------
+# Gradle 8 移除了 Jar 任务的 classifier 属性（CI#6 失败点）。
+# 上游写法：classifier "sources"  →  正确写法：archiveClassifier.set("sources")
+for m in terminal-emulator terminal-view termux-shared; do
+  f="$ROOT/$m/build.gradle"
+  [ -f "$f" ] || continue
+  python3 - "$f" <<'PYPATCH'
+import re, sys
+p = sys.argv[1]
+s = open(p, encoding='utf-8').read()
+new, n = re.subn(r'(?m)^(\s*)classifier\s+([\'"])([^\'"]+)\2\s*$',
+                 lambda m: f'{m.group(1)}archiveClassifier.set("{m.group(3)}")', s)
+if n:
+    open(p, 'w', encoding='utf-8').write(new)
+    print(f"  修正 classifier → archiveClassifier: {n} 处")
+PYPATCH
+done
+
 # ---------------- 补丁 4：termux-shared 的依赖裁剪（仅保留被终端链路使用的部分）----------------
 SHARED_GRADLE="$ROOT/termux-shared/build.gradle"
 if [ -f "$SHARED_GRADLE" ]; then
