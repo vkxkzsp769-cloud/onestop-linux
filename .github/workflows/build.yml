@@ -65,6 +65,18 @@ jobs:
           echo "--- rootfs 摘要 ---"
           ls -lh app/src/main/assets/rootfs/
 
+      - name: 验证 tar 解析规则（对照真实 Ubuntu Base 归档）
+        run: |
+          set -e
+          TB=ubuntu-base-24.04.5-base-arm64.tar.gz
+          curl -fL --retry 3 -o "/tmp/$TB" \
+            "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/$TB"
+          echo "9c1e7b6a7c9a4f7d9e0f1a2b3c4d5e6f  dummy" >/dev/null || true
+          sha256sum "/tmp/$TB"
+          # 期望：a91d5a93010193712d346d761372b7c9db6dfcf093893161c64ca107f05914f2
+          echo "a91d5a93010193712d346d761372b7c9db6dfcf093893161c64ca107f05914f2  /tmp/$TB" | sha256sum -c -
+          python3 tools/tests/tar_extract_reference.py "/tmp/$TB"
+
       - name: 缓存 Gradle
         uses: actions/cache@v4
         with:
