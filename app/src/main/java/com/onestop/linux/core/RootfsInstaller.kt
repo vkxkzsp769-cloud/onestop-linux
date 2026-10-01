@@ -55,7 +55,7 @@ object RootfsInstaller {
         Log.i(TAG, "rootfs 释放完成 → ${rootfs.absolutePath}")
     }
 
-    /** 把 assets/scripts/* 解到 rootfs 内，Path 用容器视角（方案 §5.1 的「⚠️ 搬运步骤」）。 */
+    /** 把 assets/scripts 下的脚本解到 rootfs 内，Path 用容器视角（方案 §5.1 的「⚠️ 搬运步骤」）。 */
     fun stageScripts(ctx: Context, rootfs: File = Environment.rootfsDir(ctx)): File {
         val dest = File(rootfs, "opt/onestop/scripts").apply { mkdirs() }
         runCatching {

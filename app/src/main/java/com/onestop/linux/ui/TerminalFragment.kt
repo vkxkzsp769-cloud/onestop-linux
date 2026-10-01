@@ -110,13 +110,13 @@ class TerminalFragment : Fragment() {
         override fun readFnKey(): Boolean = false
         override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = false
         override fun onEmulatorSet() {}
-        override fun logError(tag: String, message: String) = log(tag, message)
-        override fun logWarn(tag: String, message: String) = log(tag, message)
-        override fun logInfo(tag: String, message: String) = log(tag, message)
+        override fun logError(tag: String, message: String) { log(tag, message) }
+        override fun logWarn(tag: String, message: String) { log(tag, message) }
+        override fun logInfo(tag: String, message: String) { log(tag, message) }
         override fun logDebug(tag: String, message: String) {}
         override fun logVerbose(tag: String, message: String) {}
-        override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) = log(tag, "$message: ${e.message}")
-        override fun logStackTrace(tag: String, e: Exception) = log(tag, e.message ?: e.toString())
+        override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) { log(tag, "$message: ${e.message}") }
+        override fun logStackTrace(tag: String, e: Exception) { log(tag, e.message ?: e.toString()) }
     }
 
     // ---------------- TerminalSessionClient ----------------
@@ -137,13 +137,13 @@ class TerminalFragment : Fragment() {
         override fun onColorsChanged(session: TerminalSession) {}
         override fun onTerminalCursorStateChange(state: Boolean) {}
         override fun getTerminalCursorStyle(): Int = 1     // CURSOR_STYLE_BLOCK
-        override fun logError(tag: String, message: String) = log(tag, message)
-        override fun logWarn(tag: String, message: String) = log(tag, message)
-        override fun logInfo(tag: String, message: String) = log(tag, message)
+        override fun logError(tag: String, message: String) { log(tag, message) }
+        override fun logWarn(tag: String, message: String) { log(tag, message) }
+        override fun logInfo(tag: String, message: String) { log(tag, message) }
         override fun logDebug(tag: String, message: String) {}
         override fun logVerbose(tag: String, message: String) {}
-        override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) = log(tag, "$message: ${e.message}")
-        override fun logStackTrace(tag: String, e: Exception) = log(tag, e.message ?: e.toString())
+        override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) { log(tag, "$message: ${e.message}") }
+        override fun logStackTrace(tag: String, e: Exception) { log(tag, e.message ?: e.toString()) }
     }
 
     @SuppressLint("SoonBlockedPrivateApi")
