@@ -8,7 +8,7 @@
 | libtalloc | 2.4.3 | LGPL-3.0-or-later | https://talloc.samba.org/ |
 | libandroid-shmem | 0.7 | Apache-2.0 | https://github.com/termux/libandroid-shmem |
 | Termux bootstrap（bash/coreutils/apt 等） | 2026.09.27-r1 | 各包自身许可（多为 GPL-2.0+/MIT） | https://github.com/termux/termux-packages |
-| termux-app: terminal-emulator / terminal-view / termux-shared | v0.118.3 | Apache-2.0 | https://github.com/termux/termux-app |
+| termux-app: terminal-emulator / terminal-view | v0.118.3 | Apache-2.0 | https://github.com/termux/termux-app |
 | Ubuntu Base 24.04.5 LTS (ARM64) | 24.04.5 | 混合自由软件许可（GPL/LGPL/BSD/MIT…） | https://cdimage.ubuntu.com/ubuntu-base/ |
 | AndroidX / Material Components | 见 gradle 依赖 | Apache-2.0 | https://developer.android.com/jetpack |
 | OkHttp | 4.12.0 | Apache-2.0 | https://square.github.io/okhttp/ |

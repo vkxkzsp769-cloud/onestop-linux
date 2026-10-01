@@ -22,4 +22,3 @@ rootProject.name = "OneStopLinux"
 include(":app")
 include(":terminal-emulator")
 include(":terminal-view")
-include(":termux-shared")

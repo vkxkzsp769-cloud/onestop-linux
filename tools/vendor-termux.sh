@@ -5,6 +5,11 @@
 # 上游：https://github.com/termux/termux-app  tag 固定为 TERMUX_TAG
 # 许可证：Apache-2.0（保留各文件头部版权声明，勿删）
 #
+# 只 vendor 两个模块：terminal-emulator 与 terminal-view。
+#   **不 vendor termux-shared**：它提供的是 Termux:API、崩溃上报、Markwon Markdown 渲染等
+#   与终端链路无关的功能，且我们的代码与上述两模块都不依赖它（已核对源码）。
+#   若后续某个功能确实需要它，再单独引入，并按需补上它要求的版本变量（markwonVersion 等）。
+#
 # 补丁内容：
 #   1. 加 `namespace`（AGP 8 强制要求；上游是 AGP 7 写法）
 #   2. `compileSdkVersion x` → `compileSdk = x`（AGP 8 移除了该方法的兼容写法）
@@ -43,7 +48,7 @@ fi
 [ -d "$SRC/terminal-emulator" ] || {
   echo "源码目录异常: $SRC"; ls -la "$SRC" 2>/dev/null | head; exit 1; }
 
-for m in terminal-emulator terminal-view termux-shared; do
+for m in terminal-emulator terminal-view; do
   log "vendor $m"
   rm -rf "$ROOT/$m"
   cp -a "$SRC/$m" "$ROOT/$m"
@@ -75,10 +80,9 @@ patch_ns() { # patch_ns <module> <namespace>
 
 patch_ns terminal-emulator com.termux.terminal
 patch_ns terminal-view     com.termux.view
-patch_ns termux-shared     com.termux.shared
 
 # ---------------- 补丁 3：移除 maven-publish ----------------
-for m in terminal-emulator terminal-view termux-shared; do
+for m in terminal-emulator terminal-view; do
   f="$ROOT/$m/build.gradle"
   python3 - "$f" <<'PY'
 import re, sys
@@ -104,7 +108,7 @@ done
 # ---------------- 补丁 3b：Gradle 8 兼容（classifier → archiveClassifier）----------------
 # Gradle 8 移除了 Jar 任务的 classifier 属性（CI#6 失败点）。
 # 上游写法：classifier "sources"  →  正确写法：archiveClassifier.set("sources")
-for m in terminal-emulator terminal-view termux-shared; do
+for m in terminal-emulator terminal-view; do
   f="$ROOT/$m/build.gradle"
   [ -f "$f" ] || continue
   python3 - "$f" <<'PYPATCH'
@@ -119,26 +123,7 @@ if n:
 PYPATCH
 done
 
-# ---------------- 补丁 4：termux-shared 的依赖裁剪（仅保留被终端链路使用的部分）----------------
-SHARED_GRADLE="$ROOT/termux-shared/build.gradle"
-if [ -f "$SHARED_GRADLE" ]; then
-  python3 - "$SHARED_GRADLE" <<'PY'
-import sys
-p = sys.argv[1]
-s = open(p, encoding='utf-8').read()
-marker = "// —— vendored by OneStop Linux ——"
-if marker not in s:
-    s += f"""
-{marker}
-// 说明：termux-shared 上游包含大量与终端无关的功能（Termux:API、崩溃上报等）。
-// 本工程只用到其中的少量工具类；为避免引入额外依赖，这里的裁剪保持保守，
-// 编译期若发现未使用的类，可在后续版本中按需删除（见方案 §0.2 形态 C）。
-"""
-    open(p, 'w', encoding='utf-8').write(s)
-PY
-fi
-
 log "vendor 完成，模块就位："
-for m in terminal-emulator terminal-view termux-shared; do
+for m in terminal-emulator terminal-view; do
   printf '  %-20s %s\n' "$m" "$(grep -m1 namespace "$ROOT/$m/build.gradle" | tr -d ' ' || echo '(无 namespace)')"
 done

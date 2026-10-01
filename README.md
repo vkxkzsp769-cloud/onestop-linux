@@ -35,7 +35,7 @@ bash tools/fetch-deps.sh      # 还原 bootstrap / Ubuntu rootfs / proot（全�
 | Ubuntu Base | 24.04.5 | cdimage.ubuntu.com 官方 |
 | Termux bootstrap | 2026.09.27-r1+apt.android-7 | termux-packages Release |
 | proot / libtalloc / libandroid-shmem | 5.1.107.95 / 2.4.3 / 0.7 | Termux 官方 apt 仓库 |
-| termux-app（终端内核） | v0.118.3 | github.com/termux/termux-app |
+| termux-app（终端内核，只取 terminal-emulator + terminal-view） | v0.118.3 | github.com/termux/termux-app |
 
 ## 关键设计（与实测对齐）
 
