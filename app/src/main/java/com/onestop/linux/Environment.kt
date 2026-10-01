@@ -14,10 +14,13 @@ object Environment {
 
     /**
      * 内置 rootfs 资源：**Ubuntu Base 官方 tarball 原样（.tar.gz）**。
-     * 真机实证（本机 Android 16）：用 bootstrap 的 GNU tar `-xzf` 解压 29 MB → 105 MB 仅需 1.2 秒；
+     * 真机实证（本机 Android 16）：用 bootstrap 的 GNU tar 解压 29 MB → 105 MB 仅需 1.2 秒；
      * 早期用的 tar.zst + Termux `zstd` 方案因 libzstd.so.1 缺失而完全不可用。
+     * 后缀用 `.targz`（非 `.tar.gz`）：AGP 会按 `.gz` 后缀嗅探并把资产**解压**成纯 tar，
+     * 导致 APK 内文件与运行时预期不一致（实测差 80 MB）。改名可保留 gzip 原样。
+     * 运行时仍按**魔数**自适应（1f 8b → 走 tar -xz，否则走 tar -x）。
      */
-    const val ROOTFS_ASSET = "rootfs/ubuntu-base-24.04.5-base-arm64.tar.gz"
+    const val ROOTFS_ASSET = "rootfs/ubuntu-base-24.04.5-base-arm64.targz"
 
     /** 内置 Termux bootstrap（zip），提供 proot / loader / libtalloc / bash 等。 */
     const val BOOTSTRAP_ASSET = "bootstrap/bootstrap-aarch64.zip"

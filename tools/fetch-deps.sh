@@ -4,7 +4,7 @@
 #
 # 产出：
 #   app/src/main/assets/bootstrap/bootstrap-aarch64.zip           Termux bootstrap（proot/loader/libtalloc）
-#   app/src/main/assets/rootfs/ubuntu-24.04-base-arm64.tar.zst    Ubuntu Base 24.04 LTS ARM64（zstd 重压）
+#   app/src/main/assets/rootfs/ubuntu-base-24.04.5-base-arm64.targz  Ubuntu Base 24.04 LTS ARM64（gzip 原样）
 #   app/src/main/jniLibs/arm64-v8a/libproot.so                    来自 Termux 官方 deb（Android aarch64 可执行）
 #   app/src/main/jniLibs/arm64-v8a/libproot-loader.so
 #   app/src/main/assets/runtime/libtalloc.so.2
@@ -85,7 +85,9 @@ UB="$CACHE/ubuntu-base-${UBUNTU_BASE_VER}-base-arm64.tar.gz"
 dl "$UBUNTU_BASE_URL" "$UB"
 verify "$UB" "$UBUNTU_BASE_SHA256"
 # 原样内置官方 tarball（App 侧用 bootstrap 的 GNU tar -xzf 解压）
-ROOTFS_NAME="ubuntu-base-${UBUNTU_BASE_VER}-base-arm64.tar.gz"
+# ★ 真机/打包踩坑：若资产用 .tar.gz 结尾，AGP 打包时会按后缀「嗅探并解压」成纯 .tar
+#   （实测 APK 内 106 MB），与运行时预期不符。改名 .targz 绕开嗅探，保持 gzip 原样。
+ROOTFS_NAME="ubuntu-base-${UBUNTU_BASE_VER}-base-arm64.targz"
 rm -f "$ASSETS/rootfs"/*.tar.zst "$ASSETS/rootfs"/*.tar.gz
 cp -f "$UB" "$ASSETS/rootfs/$ROOTFS_NAME"
 ( cd "$ASSETS/rootfs" && sha256sum "$ROOTFS_NAME" > SHA256SUMS && cat SHA256SUMS )

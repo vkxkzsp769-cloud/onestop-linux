@@ -56,7 +56,7 @@ jobs:
         run: |
           set -e
           test -s app/src/main/assets/bootstrap/bootstrap-aarch64.zip
-          test -s app/src/main/assets/rootfs/ubuntu-base-24.04.5-base-arm64.tar.gz
+          test -s app/src/main/assets/rootfs/ubuntu-base-24.04.5-base-arm64.targz
           test -s app/src/main/jniLibs/arm64-v8a/libproot.so
           test -s app/src/main/jniLibs/arm64-v8a/libproot-loader.so
           test -s app/src/main/jniLibs/arm64-v8a/libtalloc.so

@@ -50,18 +50,26 @@ object RootfsInstaller {
         check(tar.isFile) { "bootstrap 未就绪：找不到 ${tar.absolutePath}" }
         tar.setExecutable(true, false)
 
-        // 资产名兜底：不同 AGP 版本可能把 .tar.gz 改名/解压，这里列出候选并选实际存在的
-        val assetName = listOf(
-            Environment.ROOTFS_ASSET,                     // 首选：ubuntu-base-24.04.5-base-arm64.tar.gz
-            Environment.ROOTFS_ASSET.removeSuffix(".gz"), // 兜底：若被 AGP 解压成 .tar
-        ).firstOrNull { name ->
+        // 资产名兜底：不同 AGP/打包策略可能改名，列出候选并选实际存在的
+        val candidates = listOf(
+            Environment.ROOTFS_ASSET,                        // 首选：…-base-arm64.targz
+            Environment.ROOTFS_ASSET.removeSuffix(".targz") + ".tar.gz",
+            Environment.ROOTFS_ASSET.removeSuffix(".targz") + ".tar",
+        )
+        val assetName = candidates.firstOrNull { name ->
             runCatching { ctx.assets.open(name).close(); true }.getOrDefault(false)
-        } ?: error("APK 内找不到 rootfs 资源（候选：${Environment.ROOTFS_ASSET} / ${Environment.ROOTFS_ASSET.removeSuffix(".gz")}）")
+        } ?: error("APK 内找不到 rootfs 资源（候选：${candidates.joinToString()}）")
         Log.i(TAG, "使用 rootfs 资源: $assetName")
+
+        // 按**魔数**决定是否要 -z：AGP 可能已把它解压成纯 tar，此时 -z 会让 tar 报错
+        val gzipped = ctx.assets.open(assetName).use { input ->
+            val head = ByteArray(2); input.read(head); head[0] == 0x1f.toByte() && head[1] == 0x8b.toByte()
+        }
+        Log.i(TAG, "rootfs 资产是否 gzip: $gzipped（按魔数判定，不依赖文件名）")
 
         val libDir = Environment.usrLib(ctx).absolutePath
         val pb = ProcessBuilder(
-            tar.absolutePath, "-xz",                 // -z 解 gzip，-x 解归档；从 stdin 读
+            tar.absolutePath, if (gzipped) "-xz" else "-x",   // 按魔数选择是否解 gzip；从 stdin 读
             "-C", tmp.absolutePath,
             "--no-same-owner",                       // 非 root，忽略 uid/gid
             "--warning=no-unknown-keyword",          // PAX 时间戳键告警静音
