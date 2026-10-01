@@ -60,6 +60,11 @@ object ProotCommandBuilder {
         val shm = File(base, "tmp/shm").apply { mkdirs() }
         val compatProc = File(base, "tmp/proc").apply { mkdirs() }
         val compatPower = File(base, "tmp/power_supply").apply { mkdirs() }
+        // ★ 真机截图暴露：proot 报
+        //   can't sanitize binding "…/tmp/proc/stat": No such file or directory
+        //   即我们 bind 了这个文件却从未创建它。必须在启动 proot 前生成（宿主机视角的假 /proc/stat）。
+        ensureCompatStat(compatProc)
+        ensureCompatPowerSupply(compatPower)
 
         // rootfs 内需要存在的挂载点（tar 解压后可能缺失）
         listOf("dev", "proc", "sys", "tmp").forEach { File(rootfs, it).mkdirs() }
@@ -113,6 +118,38 @@ object ProotCommandBuilder {
             ctx.applicationInfo.nativeLibraryDir,        // 其次：libandroid-shmem.so / libproot-loader.so
         ).joinToString(":")
     )
+
+    /**
+     * 生成供容器 bind 覆盖用的 `/proc/stat`。
+     * 真机报错 "can't sanitize binding …/tmp/proc/stat" 就是缺这个文件。
+     * 数值不追求真实，只保证「格式合法 + 随时钟单调递增」，避免桌面负载组件崩溃/除零。
+     */
+    private fun ensureCompatStat(dir: File) {
+        val f = File(dir, "stat")
+        runCatching {
+            val ticks = (android.os.SystemClock.elapsedRealtime() / 10L).coerceAtLeast(1L)
+            val idle = ticks * 95 / 100
+            val cores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+            f.writeText(buildString {
+                append("cpu  $ticks 0 0 $idle 0 0 0 0 0 0\n")
+                repeat(cores) { append("cpu$it $ticks 0 0 $idle 0 0 0 0 0 0\n") }
+                append("intr 0\nctxt 0\nbtime 0\nprocesses 1\nprocs_running 1\nprocs_blocked 0\n")
+            })
+        }.onFailure { android.util.Log.w("ProotCommandBuilder", "写 compat stat 失败: ${it.message}") }
+    }
+
+    /** 生成供容器 bind 覆盖用的假电池（否则 upower/xfce4-power-manager 会刷日志）。 */
+    private fun ensureCompatPowerSupply(dir: File) {
+        val bat = File(dir, "BAT0").apply { mkdirs() }
+        runCatching {
+            listOf(
+                "type" to "Battery", "status" to "Discharging", "capacity" to "78", "present" to "1",
+                "energy_full" to "4200000", "energy_now" to "3276000",
+                "voltage_now" to "3800000", "power_now" to "1200000",
+                "technology" to "Li-ion", "cycle_count" to "50",
+            ).forEach { (k, v) -> File(bat, k).writeText("$v\n") }
+        }.onFailure { android.util.Log.w("ProotCommandBuilder", "写 compat power_supply 失败: ${it.message}") }
+    }
 
     /** 在容器内执行一条命令（用于 post-install、GPU 探测等一次性任务）。 */
     fun execArgv(ctx: Context, containerCommand: String): List<String> {
