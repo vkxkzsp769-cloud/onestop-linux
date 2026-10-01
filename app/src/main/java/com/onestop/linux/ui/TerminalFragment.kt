@@ -14,6 +14,7 @@ import androidx.fragment.app.Fragment
 import com.onestop.linux.R
 import com.onestop.linux.core.Environment
 import com.onestop.linux.core.EventBus
+import com.onestop.linux.core.LogCollector
 import com.onestop.linux.core.AppEvent
 import com.onestop.linux.core.ProotCommandBuilder
 import com.termux.terminal.TerminalSession
@@ -35,6 +36,8 @@ import kotlinx.coroutines.launch
 class TerminalFragment : Fragment() {
 
     private var terminalView: TerminalView? = null
+    private var lastScreenDump = 0L
+    private var lastScreenText = ""
     private var session: TerminalSession? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -72,6 +75,8 @@ class TerminalFragment : Fragment() {
         val envp = ProotCommandBuilder.loginEnvironment(ctx)
             .map { (k, v) -> "$k=$v" }.toTypedArray()
 
+        LogCollector.init(ctx)
+        LogCollector.app("Terminal", "创建会话: argv=${argv.joinToString(" ")}")
         val s = TerminalSession(
             argv.first(),                       // proot 可执行文件（Termux JNI 直接 exec 它）
             Environment.baseDir(ctx).absolutePath,
@@ -135,7 +140,21 @@ class TerminalFragment : Fragment() {
 
     // ---------------- TerminalSessionClient ----------------
     private val sessionClient = object : TerminalSessionClient {
-        override fun onTextChanged(changedSession: TerminalSession) {}
+        override fun onTextChanged(changedSession: TerminalSession) {
+            // 把终端屏幕内容作为「会话日志」采集：这是唯一能看到容器内发生什么的方式。
+            // TerminalSession 没有公开 screen 字段，正确 API 是 getEmulator().toString()（Termux 复制全文用的就是它）。
+            // onTextChanged 触发非常频繁，故做 400ms 节流 + 与上次内容去重，避免刷爆 IO。
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (now - lastScreenDump < 400) return
+            lastScreenDump = now
+            runCatching {
+                val text = changedSession.emulator?.toString().orEmpty()
+                if (text.isNotEmpty() && text != lastScreenText) {
+                    lastScreenText = text
+                    LogCollector.session(text)
+                }
+            }
+        }
         override fun onTitleChanged(changedSession: TerminalSession) {}
         override fun onSessionFinished(finishedSession: TerminalSession) {
             scope.launch { EventBus.emit(AppEvent.ContainerState("会话已结束", false)) }
@@ -164,5 +183,11 @@ class TerminalFragment : Fragment() {
     private fun clipboard(): ClipboardManager? =
         requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
 
-    private fun log(tag: String, msg: String) = android.util.Log.d("OneStop/$tag", msg)
+    private fun log(tag: String, msg: String) {
+        if (msg.contains("error", true) || msg.contains("fail", true) || msg.contains("warn", true)) {
+            LogCollector.app("Term", "$tag: $msg")
+        } else {
+            android.util.Log.d("OneStop/$tag", msg)
+        }
+    }
 }

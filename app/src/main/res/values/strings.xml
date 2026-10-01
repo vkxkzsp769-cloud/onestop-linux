@@ -6,4 +6,9 @@
     <string name="setting_auto_switch">检测到 dsh web 后自动切换</string>
     <string name="notif_channel_name">Linux 会话</string>
     <string name="notif_title">Ubuntu 24.04 会话运行中</string>
+    <string name="action_export_log">导出日志到 Download</string>
+    <string name="action_share_log">分享日志</string>
+    <string name="action_clear_log">清空日志</string>
+    <string name="action_selfcheck">重新自检（环境诊断）</string>
+    <string name="menu_more">更多</string>
 </resources>

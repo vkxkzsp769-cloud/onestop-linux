@@ -15,6 +15,7 @@ import com.google.android.material.tabs.TabLayoutMediator
 import com.onestop.linux.core.AppEvent
 import com.onestop.linux.core.BootstrapInstaller
 import com.onestop.linux.core.EventBus
+import com.onestop.linux.core.LogCollector
 import com.onestop.linux.core.ProotCommandBuilder
 import com.onestop.linux.core.ProotRunner
 import com.onestop.linux.core.RootfsInstaller
@@ -47,7 +48,26 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 日志采集必须最早初始化：这样「启动就崩」也能留下痕迹
+        LogCollector.init(this)
+        installCrashHandler()
+        LogCollector.app("App", "MainActivity.onCreate 开始")
         setContentView(R.layout.activity_main)
+
+        val toolbar = findViewById<com.google.android.material.appbar.MaterialToolbar>(R.id.toolbar)
+        toolbar.inflateMenu(R.menu.main)
+        toolbar.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_export_log -> { exportLog(share = false); true }
+                R.id.action_share_log -> { exportLog(share = true); true }
+                R.id.action_clear_log -> {
+                    runCatching { LogCollector.logFile(this).writeText("") }
+                    Toast.makeText(this, "日志已清空", Toast.LENGTH_SHORT).show(); true
+                }
+                R.id.action_selfcheck -> { runSelfCheck(); true }
+                else -> false
+            }
+        }
         pager = findViewById(R.id.pager)
         tabs = findViewById(R.id.tabs)
 
@@ -72,7 +92,9 @@ class MainActivity : AppCompatActivity() {
     private fun prepareEnvironment() {
         lifecycleScope.launch {
             val msg = withContext(Dispatchers.IO) {
+                val t0 = android.os.SystemClock.elapsedRealtime()
                 try {
+                    LogCollector.app("Env", "开始环境准备（bootstrap=${BootstrapInstaller.isInstalled(applicationContext)} rootfs=${RootfsInstaller.isInstalled(applicationContext)}）")
                     if (!BootstrapInstaller.isInstalled(applicationContext)) {
                         EventBus.emit(AppEvent.ContainerState("首次启动：正在释放运行环境…", false))
                         BootstrapInstaller.install(applicationContext)
@@ -86,6 +108,7 @@ class MainActivity : AppCompatActivity() {
                             Log.i(TAG, "post-install: $line")
                         }
                     }
+                    LogCollector.app("Env", "释放阶段完成，耗时=${android.os.SystemClock.elapsedRealtime() - t0}ms，开始容器自检")
                     val check = ProotRunner.selfCheck(applicationContext)
                     if (check.exitCode == 0 && check.stdout.contains("Ubuntu")) {
                         "Ubuntu 24.04 就绪"
@@ -94,6 +117,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 } catch (t: Throwable) {
                     Log.e(TAG, "环境准备失败", t)
+                    LogCollector.app("Env", "环境准备失败（耗时=${android.os.SystemClock.elapsedRealtime() - t0}ms）", t)
                     "环境准备失败：${t.message}"
                 }
             }
@@ -148,9 +172,119 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ---------------- 日志导出 / 自检 / 崩溃捕获 ----------------
+
+    private fun installCrashHandler() {
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            runCatching { LogCollector.app("CRASH", "未捕获异常（线程 ${t.name}）", e) }
+            prev?.uncaughtException(t, e)
+        }
+    }
+
+    /** 导出一条包含「全部过程」的日志：写入 Download/ 或直接分享。 */
+    private fun exportLog(share: Boolean) {
+        lifecycleScope.launch {
+            val (file, msg) = withContext(Dispatchers.IO) {
+                try {
+                    val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
+                        .format(java.util.Date())
+                    val name = "onestop-log-$stamp.txt"
+                    // ① 先写到应用私有目录（一定能写成功）
+                    val staged = java.io.File(cacheDir, name)
+                    val lines = LogCollector.exportTo(this@MainActivity, staged)
+
+                    // ② 再复制到公共 Download 目录
+                    val pubPath = copyToDownloads(name, staged)
+                    LogCollector.app("App", "日志已导出: $pubPath ($lines 行)")
+                    staged to "已导出 $lines 行\n$pubPath"
+                } catch (t: Throwable) {
+                    LogCollector.app("App", "导出日志失败", t)
+                    null to "导出失败: ${t.message}"
+                }
+            }
+            Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+            if (share && file != null) shareLog(file)
+        }
+    }
+
+    /** 复制到公共 Download 目录；失败则返回私有路径（用户可以自己找）。 */
+    private fun copyToDownloads(name: String, src: java.io.File): String {
+        return try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
+                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "text/plain")
+                    put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
+                        android.os.Environment.DIRECTORY_DOWNLOADS)
+                }
+                val uri = contentResolver.insert(
+                    android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                if (uri != null) {
+                    contentResolver.openOutputStream(uri)?.use { out -> src.inputStream().use { it.copyTo(out) } }
+                    return "/Download/$name"
+                }
+            }
+            // 兜底：直接写公共目录（legacy 存储）
+            val dir = android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_DOWNLOADS)
+            dir.mkdirs()
+            val dst = java.io.File(dir, name)
+            src.copyTo(dst, overwrite = true)
+            dst.absolutePath
+        } catch (t: Throwable) {
+            LogCollector.app("App", "写入 Download 失败，回退私有目录: ${t.message}")
+            src.absolutePath
+        }
+    }
+
+    private fun shareLog(file: java.io.File) {
+        runCatching {
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this, "$packageName.fileprovider", file)
+            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(android.content.Intent.createChooser(intent, getString(R.string.action_share_log)))
+        }.onFailure {
+            LogCollector.app("App", "分享日志失败: ${it.message}")
+        }
+    }
+
+    /** 一键环境自检：把能说明问题的探测结果全部写进日志，并弹结果。 */
+    private fun runSelfCheck() {
+        lifecycleScope.launch {
+            val report = withContext(Dispatchers.IO) {
+                val sb = StringBuilder()
+                sb.appendLine("=== 环境自检 ===")
+                sb.appendLine("bootstrap: ${com.onestop.linux.core.BootstrapInstaller.isInstalled(applicationContext)}")
+                sb.appendLine("rootfs: ${com.onestop.linux.core.RootfsInstaller.isInstalled(applicationContext)}")
+                runCatching { com.onestop.linux.core.ProotCommandBuilder.ensureRuntimeLibs(applicationContext) }
+                val usrLib = java.io.File(com.onestop.linux.core.Environment.usrLib(applicationContext))
+                listOf("libtalloc.so.2", "libandroid-shmem.so").forEach {
+                    val f = java.io.File(usrLib, it)
+                    sb.appendLine("usr/lib/$it 存在=${f.isFile} 大小=${f.length()}")
+                }
+                sb.appendLine("--- 容器探针（proot 进容器执行 cat /etc/os-release）---")
+                val r = com.onestop.linux.core.ProotRunner.runInRootfs(
+                    applicationContext, "cat /etc/os-release | head -3; echo ---; uname -m; id -u", 120)
+                sb.appendLine("exit=${r.exitCode} timeout=${r.timedOut}")
+                sb.appendLine("stdout:\n${r.stdout}")
+                if (r.stderr.isNotBlank()) sb.appendLine("stderr:\n${r.stderr}")
+                sb.appendLine("=== 自检结束 ===")
+                sb.toString()
+            }
+            LogCollector.app("SelfCheck", report)
+            Toast.makeText(this@MainActivity, "自检完成，结果已写入日志（请导出查看）", Toast.LENGTH_LONG).show()
+        }
+    }
+
     override fun onDestroy() {
         detector.stop()
         detectorScope.cancel()
+        LogCollector.app("App", "MainActivity.onDestroy")
         super.onDestroy()
     }
 }

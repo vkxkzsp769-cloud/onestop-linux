@@ -38,6 +38,12 @@ object Environment {
     fun rootfsTmpDir(ctx: Context): File = File(baseDir(ctx), "rootfs.tmp")
     fun scriptsDir(ctx: Context): File = File(baseDir(ctx), "scripts")
 
+    /** 日志目录（LogCollector 使用；导出时也从此处取）。 */
+    fun logsDir(ctx: Context): File = File(baseDir(ctx), "logs")
+
+    /** 终端会话原始输出（供日志导出附带最近若干行）。 */
+    fun lastSessionLog(ctx: Context): File = File(baseDir(ctx), "last-session.log")
+
     /** 释放完成哨兵（方案 §5.1）。 */
     fun installedMarker(ctx: Context): File =
         File(rootfsDir(ctx), ".installed-$ROOTFS_VERSION")

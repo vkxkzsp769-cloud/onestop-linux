@@ -102,6 +102,7 @@ object RootfsInstaller {
         val bash = File(tmp, "bin/bash")
         if (!bash.isFile) {
             tmp.deleteRecursively()
+            LogCollector.app("Rootfs", "解压失败 tar exit=$code asset=$assetName 输出尾部=${out.toString().takeLast(400)}")
             error("rootfs 解压失败（tar exit=$code，asset=$assetName）：${out.toString().takeLast(600)}")
         }
         if (code != 0) {
@@ -126,6 +127,7 @@ object RootfsInstaller {
         Environment.installedMarker(ctx).writeText("installedAt=${System.currentTimeMillis()}\n")
         onProgress?.invoke(100)
         Log.i(TAG, "rootfs 释放完成 → ${rootfs.absolutePath}（大小校验通过：bin/bash 存在）")
+        LogCollector.app("Rootfs", "释放完成（bin/bash 校验通过），路径=${rootfs.absolutePath}")
     }
 
     /** 把 assets/scripts 下的脚本解到 rootfs 内，Path 用容器视角（方案 §5.1 的「⚠️ 搬运步骤」）。 */

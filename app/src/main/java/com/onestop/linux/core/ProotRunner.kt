@@ -25,14 +25,21 @@ object ProotRunner {
         timeoutSec: Long = 600,
         onLine: ((String) -> Unit)? = null
     ): Result {
+        LogCollector.init(ctx)
         val argv = ProotCommandBuilder.execArgv(ctx, containerCommand)
         val env = ProotCommandBuilder.loginEnvironment(ctx)
+
+        LogCollector.app("ProotRunner", "执行容器命令: $containerCommand")
+        LogCollector.app("ProotRunner", "argv=${argv.joinToString(" ")}")
+        LogCollector.app("ProotRunner", "env(LD_LIBRARY_PATH/PROOT_LOADER/PROOT_TMP_DIR)=" +
+            listOf("LD_LIBRARY_PATH", "PROOT_LOADER", "PROOT_TMP_DIR").joinToString { "$it=${env[it]}" })
 
         val pb = ProcessBuilder(argv)
         pb.redirectErrorStream(false)
         pb.environment().putAll(env)
         pb.directory(ctx.filesDir)
 
+        val t0 = android.os.SystemClock.elapsedRealtime()
         return try {
             val proc = pb.start()
             val out = StringBuilder()
@@ -42,13 +49,14 @@ object ProotRunner {
                 BufferedReader(InputStreamReader(proc.inputStream)).useLines { lines ->
                     lines.forEach { line ->
                         out.append(line).append('\n')
+                        LogCollector.proc("stdout", line)
                         onLine?.invoke(line)
                     }
                 }
             }
             val errThread = Thread {
                 BufferedReader(InputStreamReader(proc.errorStream)).useLines { lines ->
-                    lines.forEach { err.append(it).append('\n') }
+                    lines.forEach { err.append(it).append('\n'); LogCollector.proc("stderr", it) }
                 }
             }
             outThread.start(); errThread.start()
@@ -58,10 +66,13 @@ object ProotRunner {
                 proc.destroyForcibly()
                 outThread.join(2_000); errThread.join(2_000)
                 Log.w(TAG, "命令超时(${timeoutSec}s): $containerCommand")
+                LogCollector.procExit("proot", -1, android.os.SystemClock.elapsedRealtime() - t0, timeout = true)
                 return Result(-1, out.toString(), err.toString(), timedOut = true)
             }
             outThread.join(5_000); errThread.join(5_000)
-            Result(proc.exitValue(), out.toString(), err.toString(), timedOut = false)
+            val code = proc.exitValue()
+            LogCollector.procExit("proot", code, android.os.SystemClock.elapsedRealtime() - t0)
+            Result(code, out.toString(), err.toString(), timedOut = false)
         } catch (t: Throwable) {
             Log.e(TAG, "执行失败: $containerCommand", t)
             Result(-1, "", t.message ?: t.toString(), timedOut = false)

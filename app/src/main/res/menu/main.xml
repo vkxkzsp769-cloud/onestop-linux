@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@+id/action_export_log" android:title="@string/action_export_log" />
+    <item android:id="@+id/action_share_log" android:title="@string/action_share_log" />
+    <item android:id="@+id/action_clear_log" android:title="@string/action_clear_log" />
+    <item android:id="@+id/action_selfcheck" android:title="@string/action_selfcheck" />
+</menu>

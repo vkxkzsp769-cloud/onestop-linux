@@ -63,6 +63,7 @@ object BootstrapInstaller {
         File(dest, "lib").listFiles()?.forEach { it.setReadable(true, false) }
 
         Log.i(TAG, "bootstrap 释放完成，条目数=$count → ${dest.absolutePath}")
+        LogCollector.app("Bootstrap", "释放完成，条目数=$count")
         return count
     }
 
