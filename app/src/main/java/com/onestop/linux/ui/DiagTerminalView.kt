@@ -96,6 +96,46 @@ class DiagTerminalView @JvmOverloads constructor(
         return try { getEmulatorForDiag()?.mColumns ?: -1 } catch (t: Throwable) { -1 }
     }
 
+    // ---------------- 尺寸变化防抖 ----------------
+    /**
+     * 真机日志证据：一次会话中出现 **150 次**尺寸变化（viewH 2261/1553/1356/1105…，
+     * rootH 2800/2092/1895 之间反复跳），说明窗口高度被系统栏/IME 反复改动。
+     * 每次改动都会走 TerminalView.updateSize() → 整屏重排 + 向 shell 发 SIGWINCH，
+     * 这就是「打字时字母出现要等」的真正成本来源（输入本身只要 1~3ms）。
+     *
+     * 处理：连续变化只在**尺寸稳定 350ms 后**应用一次，避免打字过程中反复重排。
+     */
+    private val resizeHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var pendingResize: Runnable? = null
+    private var appliedViewH = -1
+    var resizeDebounceMs: Long = 350L
+
+    private fun scheduleApplySize() {
+        pendingResize?.let { resizeHandler.removeCallbacks(it) }
+        val r = Runnable {
+            pendingResize = null
+            val h = height
+            if (h > 0 && h != appliedViewH) {
+                appliedViewH = h
+                superUpdateSizeForResize()
+                LogCollector.app("SizeDebounce", "应用尺寸 viewH=$h rows=${diagRows()} cols=${diagCols()}")
+            }
+        }
+        pendingResize = r
+        resizeHandler.postDelayed(r, resizeDebounceMs)
+    }
+
+    /** 触发一次真正的 updateSize（TerminalView.updateSize 为 public）。 */
+    private fun superUpdateSizeForResize() {
+        runCatching { updateSize() }
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        // 尺寸变化时不立即重排，交给防抖
+        scheduleApplySize()
+    }
+
     override fun onDraw(canvas: Canvas) {
         val t0 = SystemClock.elapsedRealtimeNanos()
         super.onDraw(canvas)
