@@ -21,8 +21,8 @@ import com.termux.view.TerminalView
  *   3) 同时统计单帧 onDraw 的重绘面积与耗时，判断是否被整屏重绘拖慢。
  */
 class DiagTerminalView @JvmOverloads constructor(
-    context: Context, attrs: AttributeSet? = null, defStyle: Int = 0
-) : TerminalView(context, attrs, defStyle) {
+    context: Context, attrs: AttributeSet? = null
+) : TerminalView(context, attrs) {
 
     @Volatile private var contentReadyAt = 0L
     @Volatile private var pendingMeasure = false
@@ -63,6 +63,11 @@ class DiagTerminalView @JvmOverloads constructor(
         pendingMeasure = true
         choreographer.postFrameCallback(frameCallback)
     }
+
+    /** 诊断用：当前终端行/列（TerminalView 的 mEmulator 是私有，用我们补丁加的 getter）。 */
+    fun diagRows(): Int = runCatching { emulatorForDiag?.mRows ?: -1 }.getOrDefault(-1)
+    fun diagCols(): Int = runCatching { emulatorForDiag?.mColumns ?: -1 }.getOrDefault(-1)
+    // 说明：Kotlin 会把 Java 的 getEmulatorForDiag() 识别为属性 emulatorForDiag
 
     /** 开始一段帧间隔观察（例如用户开始打字时）。 */
     fun startFrameWatch() {

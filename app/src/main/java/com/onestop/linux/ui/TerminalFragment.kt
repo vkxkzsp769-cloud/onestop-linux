@@ -145,9 +145,8 @@ class TerminalFragment : Fragment() {
         terminalView?.onScreenUpdated()
         // 尺寸诊断：记录 Fragment 恢复时的视口尺寸，用于排查「行数抖动」
         terminalView?.let {
-            val emu = it.mEmulator
             LogCollector.app("SizeDiag", "onResume viewHeight=${it.height} viewWidth=${it.width} " +
-                "rows=${emu?.mRows ?: -1} cols=${emu?.mColumns ?: -1}")
+                "rows=${it.diagRows()} cols=${it.diagCols()}")
         }
     }
 
@@ -157,10 +156,9 @@ class TerminalFragment : Fragment() {
      * 说明抖动来源就是 IME 的弹收（这正是我们怀疑的根因）。
      */
     private fun diagSize(reason: String, tv: TerminalView) {
-        // 注意：TerminalEmulator.mScreen 是私有的，公开的是 mRows / mColumns
-        val emu = tv.mEmulator
-        val rows = emu?.mRows ?: -1
-        val cols = emu?.mColumns ?: -1
+        // 注意：TerminalView.mEmulator 私有，改用 vendor 补丁加的 getEmulatorForDiag()
+        val rows = tv.diagRows()
+        val cols = tv.diagCols()
         if (rows == lastRows && lastViewH == tv.height) return
         lastRows = rows; lastViewH = tv.height
         val act = activity ?: return
