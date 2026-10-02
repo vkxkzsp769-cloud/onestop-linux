@@ -44,6 +44,11 @@ class TerminalFragment : Fragment() {
     private var sessionTapEnabled = false
     /** 最近一次按键下发时刻（用于端到端延迟测量）。 */
     @Volatile private var lastInputAt = 0L
+    /** 本按键的起点（用于打印各阶段耗时）。 */
+    @Volatile private var keyT0 = 0L
+    @Volatile private var keySeq = 0
+    /** 统计：最近 N 次延迟，导出日志时给出中位数/最大值。 */
+    private val latencySamples = java.util.concurrent.ConcurrentLinkedQueue<Long>()
     private var lastScreenText = ""
     private var session: TerminalSession? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -89,7 +94,8 @@ class TerminalFragment : Fragment() {
         // 尺寸诊断：每次布局变化都记录行数（这是判定「谁在改高度」的关键数据）
         if (!watched) {
             watched = true
-            tv.addOnLayoutChangeListener { v, _, top, _, bottom, _, oldTop, _, oldBottom ->
+            // 记录「绘制完成」耗时，区分主线程被绘制阻塞的情况
+        tv.addOnLayoutChangeListener { v, _, top, _, bottom, _, oldTop, _, oldBottom ->
                 val delta = (oldBottom - oldTop) - (bottom - top)
                 diagSize("layoutChange(deltaH=$delta)", tv as TerminalView)
             }
@@ -173,7 +179,17 @@ class TerminalFragment : Fragment() {
         super.onDestroyView()
     }
 
+    /** 把输入延迟统计写进日志（导出时能看到中位数/最大值）。 */
+    fun dumpLatencyStats() {
+        val list = latencySamples.toList().sorted()
+        if (list.isEmpty()) { LogCollector.app("Latency", "无样本"); return }
+        val p50 = list[list.size / 2]
+        val p90 = list[(list.size * 9 / 10).coerceAtMost(list.size - 1)]
+        LogCollector.app("Latency", "样本=${list.size} 最小=${list.first()}ms 中位=${p50}ms P90=${p90}ms 最大=${list.last()}ms")
+    }
+
     override fun onDestroy() {
+        dumpLatencyStats()
         scope.cancel()
         super.onDestroy()
     }
@@ -185,12 +201,17 @@ class TerminalFragment : Fragment() {
             terminalView?.let { it.requestFocus(); showIme(it) }
         }
         override fun shouldBackButtonBeMappedToEscape(): Boolean = false
-        override fun shouldEnforceCharBasedInput(): Boolean = true
+        // 输入类型：true=VISIBLE_PASSWORD（Termux 默认，兼容三星等输入法）；
+        // false=TYPE_NULL（更轻量，部分国产输入法在此模式下按键路径更短）。
+        // 真机反馈输入迟钝，先切到 false 观察（可用日志中的 Latency 对比）。
+        override fun shouldEnforceCharBasedInput(): Boolean = false
         override fun shouldUseCtrlSpaceWorkaround(): Boolean = false
         override fun isTerminalViewSelected(): Boolean = true
         override fun copyModeChanged(copyMode: Boolean) {}
         override fun onKeyDown(keyCode: Int, e: KeyEvent, session: TerminalSession): Boolean {
-            lastInputAt = android.os.SystemClock.elapsedRealtime()
+            val now = android.os.SystemClock.elapsedRealtime()
+            lastInputAt = now; keyT0 = now; keySeq++
+            LogCollector.app("Key", "#$keySeq onKeyDown code=$keyCode")
             return false
         }
         override fun onKeyUp(keyCode: Int, e: KeyEvent): Boolean = false
@@ -200,7 +221,9 @@ class TerminalFragment : Fragment() {
         override fun readShiftKey(): Boolean = false
         override fun readFnKey(): Boolean = false
         override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean {
-            lastInputAt = android.os.SystemClock.elapsedRealtime()
+            val now = android.os.SystemClock.elapsedRealtime()
+            lastInputAt = now; keyT0 = now; keySeq++
+            LogCollector.app("Key", "#$keySeq onCodePoint cp=$codePoint")
             return false
         }
         override fun onEmulatorSet() {}
@@ -220,9 +243,12 @@ class TerminalFragment : Fragment() {
             //   目的：区分「渲染/主线程慢」与「PTY/PRoot 慢」，避免继续猜测。
             val sentAt = lastInputAt
             if (sentAt > 0) {
-                val dt = android.os.SystemClock.elapsedRealtime() - sentAt
+                val now = android.os.SystemClock.elapsedRealtime()
+                val dt = now - sentAt
                 lastInputAt = 0
-                LogCollector.app("Latency", "按键→回显 ${dt}ms")
+                latencySamples.add(dt)
+                while (latencySamples.size > 200) latencySamples.poll()
+                LogCollector.app("Latency", "#$keySeq 按键→回显 ${dt}ms")
             }
             // 把终端屏幕内容作为「会话日志」采集：这是唯一能看到容器内发生什么的方式。
             // TerminalSession 没有公开 screen 字段，正确 API 是 getEmulator().toString()（Termux 复制全文用的就是它）。
