@@ -30,6 +30,9 @@ object LogCollector {
 
     private const val TAG = "LogCollector"
 
+    /** 是否把日志同时镜像到 logcat。默认关闭：logcat 写入在某些 ROM 上会阻塞主线程。 */
+    private const val MIRROR_TO_LOGCAT = false
+
     /** 单文件上限（超出则轮转为 .1）。 */
     private const val MAX_BYTES = 8L * 1024 * 1024     // 8 MB
 
@@ -60,9 +63,18 @@ object LogCollector {
 
     // ---------------- 三路写入 ----------------
 
-    /** 应用自身日志（替代 Log.i/w/e，写到文件同时仍走 logcat）。 */
+    /**
+     * 应用自身日志。
+     *
+     * ★ 性能相关（真机踩坑）：**默认不再调用 android.util.Log**。
+     *   原因：「按键 → 回显」实测只有 1~3ms，但用户仍感觉字母出现很慢，
+     *   怀疑主线程被阻塞。逐键打点时每个按键都会走一次 [app]，
+     *   而部分 ROM（vivo/HyperOS 等）的 logcat 写入会在调用线程上阻塞，
+     *   足以造成可见卡顿。现在只做「异步文件写入」，完全不动 logcat。
+     *   需要 logcat 时把 [MIRROR_TO_LOGCAT] 改为 true（仅调试用）。
+     */
     fun app(tag: String, msg: String, t: Throwable? = null) {
-        Log.i("OneStop/$tag", msg)
+        if (MIRROR_TO_LOGCAT) Log.i("OneStop/$tag", msg)
         write("app", "[$tag] $msg")
         t?.let { write("app", "[$tag] 异常: ${it.javaClass.simpleName}: ${it.message}\n" + it.stackTraceToString()) }
     }

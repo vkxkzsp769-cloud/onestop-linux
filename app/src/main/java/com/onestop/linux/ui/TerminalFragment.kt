@@ -184,6 +184,10 @@ class TerminalFragment : Fragment() {
         runCatching { (terminalView as? DiagTerminalView)?.dumpFrameStats() }
     }
 
+    /** 供 UI 显示一行运行时状态（帧间隔中位），便于用户直接念给我。 */
+    fun frameSummary(): String =
+        runCatching { (terminalView as? DiagTerminalView)?.frameGapSummary() ?: "无" }.getOrDefault("无")
+
     fun dumpLatencyStats() {
         val list = latencySamples.toList().sorted()
         if (list.isEmpty()) { LogCollector.app("Latency", "无样本"); return }
@@ -229,6 +233,7 @@ class TerminalFragment : Fragment() {
             val now = android.os.SystemClock.elapsedRealtime()
             lastInputAt = now; keyT0 = now; keySeq++
             LogCollector.app("Key", "#$keySeq onCodePoint cp=$codePoint")
+            (terminalView as? DiagTerminalView)?.startFrameWatch()
             return false
         }
         override fun onEmulatorSet() {}

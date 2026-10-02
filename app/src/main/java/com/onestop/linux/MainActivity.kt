@@ -217,7 +217,8 @@ class MainActivity : AppCompatActivity() {
                     null to "导出失败: ${t.message}"
                 }
             }
-            Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+            val frames = runCatching { terminalFragment?.frameSummary() }.getOrDefault("")
+            Toast.makeText(this@MainActivity, "$msg\n$frames", Toast.LENGTH_LONG).show()
             if (share && file != null) shareLog(file)
         }
     }

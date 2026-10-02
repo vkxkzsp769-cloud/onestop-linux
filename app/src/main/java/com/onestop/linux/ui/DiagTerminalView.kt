@@ -32,19 +32,43 @@ class DiagTerminalView @JvmOverloads constructor(
     private var totalDrawUs = 0L
 
     private val choreographer = Choreographer.getInstance()
+
+    // 帧间隔统计：用来判定「是不是掉帧」。
+    // 若间隔中位数 > 16ms（60Hz）或 > 8ms（120Hz），说明 App 的帧被拖延，
+    // 那么即使 PTY 回显只要 1~3ms，用户仍会看到「字母半天才出来」。
+    private var lastFrameAt = 0L
+    private var frameCount = 0L
+    private val frameGaps = ArrayList<Long>(256)
+
     private val frameCallback = Choreographer.FrameCallback { t ->
+        val nowMs = t / 1_000_000
+        if (lastFrameAt > 0) {
+            val gap = nowMs - lastFrameAt
+            frameCount++
+            if (frameGaps.size < 256) frameGaps.add(gap)
+        }
+        lastFrameAt = nowMs
         if (pendingMeasure) {
-            val d = t / 1_000_000 - contentReadyAt
+            val d = nowMs - contentReadyAt
             pendingMeasure = false
-            // 只在明显滞后时记录，避免刷屏
             if (d > 60) LogCollector.app("Frame", "内容就绪→首帧 ${d}ms")
         }
+        // 持续观察一小段时间内的帧间隔
+        if (frameCount in 1..140) choreographer.postFrameCallback(this)
     }
 
     /** 终端内容已更新（onTextChanged 时调用）。 */
     fun markContentReady() {
         contentReadyAt = SystemClock.elapsedRealtime()
         pendingMeasure = true
+        choreographer.postFrameCallback(frameCallback)
+    }
+
+    /** 开始一段帧间隔观察（例如用户开始打字时）。 */
+    fun startFrameWatch() {
+        frameCount = 0
+        frameGaps.clear()
+        lastFrameAt = 0
         choreographer.postFrameCallback(frameCallback)
     }
 
@@ -63,10 +87,27 @@ class DiagTerminalView @JvmOverloads constructor(
         }
     }
 
+    /** 一行摘要，便于直接显示给用户/贴进对话。 */
+    fun frameGapSummary(): String {
+        val gaps = frameGaps.sorted()
+        if (gaps.isEmpty()) return "无帧样本"
+        val p50 = gaps[gaps.size / 2]
+        val p90 = gaps[(gaps.size * 9 / 10).coerceAtMost(gaps.size - 1)]
+        return "帧间隔 中位=${p50}ms P90=${p90}ms 最大=${gaps.last()}ms 样本=${gaps.size}"
+    }
+
     /** 供导出日志时汇总。 */
     fun dumpFrameStats() {
-        if (drawCount == 0L) { LogCollector.app("Frame", "无绘制样本"); return }
-        LogCollector.app("Frame",
-            "绘制帧数=$drawCount 慢帧(>16ms)=$slowDraws 平均=${totalDrawUs / drawCount / 1000f}ms 最大=${maxDrawUs / 1000f}ms")
+        if (drawCount == 0L) { LogCollector.app("Frame", "无绘制样本") } else {
+            LogCollector.app("Frame",
+                "绘制帧数=$drawCount 慢帧(>16ms)=$slowDraws 平均=${totalDrawUs / drawCount / 1000f}ms 最大=${maxDrawUs / 1000f}ms")
+        }
+        val gaps = frameGaps.sorted()
+        if (gaps.isEmpty()) { LogCollector.app("FrameGap", "无帧间隔样本"); return }
+        val p50 = gaps[gaps.size / 2]
+        val p90 = gaps[(gaps.size * 9 / 10).coerceAtMost(gaps.size - 1)]
+        LogCollector.app("FrameGap",
+            "样本=${gaps.size} 最小=${gaps.first()}ms 中位=${p50}ms P90=${p90}ms 最大=${gaps.last()}ms " +
+            "（16.7ms≈60fps / 8.3ms≈120fps；中位明显偏大即为掉帧）")
     }
 }
