@@ -123,6 +123,42 @@ if n:
 PYPATCH
 done
 
+# ---------------- 补丁 3c：去掉 TerminalView 的 final，并暴露诊断 getter ----------------
+# 目的：让 DiagTerminalView 能继承 TerminalView 做「绘制帧 / 内容就绪→首帧」诊断。
+# 说明：上游把类声明为 `public final class TerminalView extends View`，无法继承。
+TV_JAVA="$ROOT/terminal-view/src/main/java/com/termux/view/TerminalView.java"
+if [ -f "$TV_JAVA" ]; then
+  if grep -q "public final class TerminalView" "$TV_JAVA"; then
+    sed -i 's/public final class TerminalView/public class TerminalView/' "$TV_JAVA"
+    log "  已移除 TerminalView 的 final（供 DiagTerminalView 继承）"
+  else
+    log "  TerminalView 已非 final（可能上游已改）"
+  fi
+  if ! grep -q "getEmulatorForDiag" "$TV_JAVA"; then
+    python3 - "$TV_JAVA" <<'PYJ'
+import sys
+p = sys.argv[1]
+s = open(p, encoding='utf-8').read()
+anchor = "    public void onScreenUpdated() {"
+add = ("    /** OneStop Linux 诊断用：只读暴露当前 emulator（用于读取 mRows/mColumns）。 */\n"
+       "    public TerminalEmulator getEmulatorForDiag() { return mEmulator; }\n\n")
+if anchor in s:
+    s = s.replace(anchor, add + anchor, 1)
+    open(p, 'w', encoding='utf-8').write(s)
+    print("  已添加 getEmulatorForDiag()")
+else:
+    print("  !! 未找到 onScreenUpdated 锚点，getEmulatorForDiag 未添加")
+PYJ
+  fi
+  # 校验补丁确实生效（否则后面编译必失败，早失败好定位）
+  grep -q "public class TerminalView" "$TV_JAVA" || { echo "TerminalView final 补丁未生效"; exit 1; }
+  grep -q "getEmulatorForDiag" "$TV_JAVA" || { echo "getEmulatorForDiag 补丁未生效"; exit 1; }
+  log "  校验通过：TerminalView 可继承 + getEmulatorForDiag 存在"
+else
+  log "  !! 未找到 TerminalView.java：$TV_JAVA"
+  exit 1
+fi
+
 log "vendor 完成，模块就位："
 for m in terminal-emulator terminal-view; do
   printf '  %-20s %s\n' "$m" "$(grep -m1 namespace "$ROOT/$m/build.gradle" | tr -d ' ' || echo '(无 namespace)')"

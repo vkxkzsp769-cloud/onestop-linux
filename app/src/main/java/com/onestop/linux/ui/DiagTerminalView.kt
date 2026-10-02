@@ -53,8 +53,8 @@ class DiagTerminalView @JvmOverloads constructor(
             pendingMeasure = false
             if (d > 60) LogCollector.app("Frame", "内容就绪→首帧 ${d}ms")
         }
-        // 持续观察一小段时间内的帧间隔
-        if (frameCount in 1..140) choreographer.postFrameCallback(this)
+        // 持续观察一小段时间内的帧间隔（必须传 FrameCallback，不能传 View 自身）
+        if (frameCount in 1..140) choreographer.postFrameCallback(frameCallback)
     }
 
     /** 终端内容已更新（onTextChanged 时调用）。 */
@@ -65,9 +65,9 @@ class DiagTerminalView @JvmOverloads constructor(
     }
 
     /** 诊断用：当前终端行/列（TerminalView 的 mEmulator 是私有，用我们补丁加的 getter）。 */
-    fun diagRows(): Int = runCatching { emulatorForDiag?.mRows ?: -1 }.getOrDefault(-1)
-    fun diagCols(): Int = runCatching { emulatorForDiag?.mColumns ?: -1 }.getOrDefault(-1)
-    // 说明：Kotlin 会把 Java 的 getEmulatorForDiag() 识别为属性 emulatorForDiag
+    // 注意：Kotlin 对 Java getX 的属性映射有前提，这里直接调用方法名最稳
+    fun diagRows(): Int = runCatching { getEmulatorForDiag()?.mRows ?: -1 }.getOrDefault(-1)
+    fun diagCols(): Int = runCatching { getEmulatorForDiag()?.mColumns ?: -1 }.getOrDefault(-1)
 
     /** 开始一段帧间隔观察（例如用户开始打字时）。 */
     fun startFrameWatch() {
