@@ -58,7 +58,7 @@ class TerminalFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        val tv = view.findViewById<TerminalView>(R.id.terminal_view)
+        val tv = view.findViewById<DiagTerminalView>(R.id.terminal_view)
         terminalView = tv
         tv.setTerminalViewClient(viewClient)
         // 订阅「环境就绪」事件：就绪后再启动会话（避免 rootfs 未解完导致 proot 失败）
@@ -180,6 +180,10 @@ class TerminalFragment : Fragment() {
     }
 
     /** 把输入延迟统计写进日志（导出时能看到中位数/最大值）。 */
+    fun dumpFrameStats() {
+        runCatching { (terminalView as? DiagTerminalView)?.dumpFrameStats() }
+    }
+
     fun dumpLatencyStats() {
         val list = latencySamples.toList().sorted()
         if (list.isEmpty()) { LogCollector.app("Latency", "无样本"); return }
@@ -190,6 +194,7 @@ class TerminalFragment : Fragment() {
 
     override fun onDestroy() {
         dumpLatencyStats()
+        dumpFrameStats()
         scope.cancel()
         super.onDestroy()
     }
@@ -241,6 +246,7 @@ class TerminalFragment : Fragment() {
         override fun onTextChanged(changedSession: TerminalSession) {
             // ★ 端到端延迟测量：按键下发(spawn 时间) → PTY 回显触发 onTextChanged
             //   目的：区分「渲染/主线程慢」与「PTY/PRoot 慢」，避免继续猜测。
+            runCatching { (terminalView as? DiagTerminalView)?.markContentReady() }
             val sentAt = lastInputAt
             if (sentAt > 0) {
                 val now = android.os.SystemClock.elapsedRealtime()

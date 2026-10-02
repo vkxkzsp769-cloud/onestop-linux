@@ -199,6 +199,7 @@ class MainActivity : AppCompatActivity() {
                 try {
                     // 导出前把输入延迟统计落进日志（判断「渲染慢 vs PTY 慢」的关键数据）
                     runCatching { terminalFragment?.dumpLatencyStats() }
+                    runCatching { terminalFragment?.dumpFrameStats() }
                     Thread.sleep(120)   // 让日志线程把统计写完
                     val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
                         .format(java.util.Date())
