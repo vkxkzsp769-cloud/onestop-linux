@@ -137,8 +137,9 @@ class TerminalFragment : Fragment() {
         terminalView?.onScreenUpdated()
         // 尺寸诊断：记录 Fragment 恢复时的视口尺寸，用于排查「行数抖动」
         terminalView?.let {
+            val emu = it.mEmulator
             LogCollector.app("SizeDiag", "onResume viewHeight=${it.height} viewWidth=${it.width} " +
-                "lines=${it.mEmulator?.mScreen?.size ?: -1}")
+                "rows=${emu?.mRows ?: -1} cols=${emu?.mColumns ?: -1}")
         }
     }
 
@@ -148,7 +149,10 @@ class TerminalFragment : Fragment() {
      * 说明抖动来源就是 IME 的弹收（这正是我们怀疑的根因）。
      */
     private fun diagSize(reason: String, tv: TerminalView) {
-        val rows = runCatching { tv.mEmulator?.mScreen?.size }.getOrNull() ?: -1
+        // 注意：TerminalEmulator.mScreen 是私有的，公开的是 mRows / mColumns
+        val emu = tv.mEmulator
+        val rows = emu?.mRows ?: -1
+        val cols = emu?.mColumns ?: -1
         if (rows == lastRows && lastViewH == tv.height) return
         lastRows = rows; lastViewH = tv.height
         val act = activity ?: return
@@ -157,7 +161,7 @@ class TerminalFragment : Fragment() {
         val rootH = root?.height ?: -1
         val imeHidden = rootH - visible.bottom      // >0 表示被 IME/系统栏遮挡的高度
         LogCollector.app("SizeDiag",
-            "$reason rows=$rows viewH=${tv.height} viewW=${tv.width} " +
+            "$reason rows=$rows cols=$cols viewH=${tv.height} viewW=${tv.width} " +
             "measuredH=${tv.measuredHeight} rootH=$rootH visibleBottom=${visible.bottom} " +
             "遮挡高度=$imeHidden imeVisible=${imeHidden > 150}")
     }
