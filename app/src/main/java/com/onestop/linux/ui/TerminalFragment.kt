@@ -35,7 +35,7 @@ import kotlinx.coroutines.launch
  */
 class TerminalFragment : Fragment() {
 
-    private var terminalView: TerminalView? = null
+    private var terminalView: DiagTerminalView? = null
     private var lastScreenDump = 0L
     private var lastRows = -1
     private var lastViewH = -1
@@ -97,7 +97,7 @@ class TerminalFragment : Fragment() {
             // 记录「绘制完成」耗时，区分主线程被绘制阻塞的情况
         tv.addOnLayoutChangeListener { v, _, top, _, bottom, _, oldTop, _, oldBottom ->
                 val delta = (oldBottom - oldTop) - (bottom - top)
-                diagSize("layoutChange(deltaH=$delta)", tv as TerminalView)
+                diagSize("layoutChange(deltaH=$delta)", tv)
             }
             tv.viewTreeObserver.addOnGlobalLayoutListener {
                 diagSize("globalLayout", tv)
@@ -155,7 +155,7 @@ class TerminalFragment : Fragment() {
      * 差值 = 被软键盘（IME）占掉的高度。若差值在 0 与 ~1000px 之间反复切换，
      * 说明抖动来源就是 IME 的弹收（这正是我们怀疑的根因）。
      */
-    private fun diagSize(reason: String, tv: TerminalView) {
+    private fun diagSize(reason: String, tv: DiagTerminalView) {
         // 注意：TerminalView.mEmulator 私有，改用 vendor 补丁加的 getEmulatorForDiag()
         val rows = tv.diagRows()
         val cols = tv.diagCols()
