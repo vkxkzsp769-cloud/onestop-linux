@@ -123,6 +123,16 @@ class MainActivity : AppCompatActivity() {
             }
             EventBus.emit(AppEvent.ContainerState(msg, msg.contains("就绪")))
             Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+            // ★ 关键：环境就绪后才允许启动终端会话。
+            //   真机日志证据：首次启动时会话在 08:08:30 就建了，而 rootfs 到 08:08:36 才释放完，
+            //   于是 proot 报 `'/bin/bash' not found` —— 表现为「第一次打开必然失败，必须重启 App」。
+            if (com.onestop.linux.core.BootstrapInstaller.isInstalled(applicationContext) &&
+                RootfsInstaller.isInstalled(applicationContext)) {
+                LogCollector.app("Env", "环境就绪，通知终端可以启动会话")
+                EventBus.emit(AppEvent.EnvironmentReady)
+            } else {
+                LogCollector.app("Env", "环境未就绪，终端会话继续保持等待")
+            }
 
             if (msg.contains("就绪")) {
                 // 注意：detector.start 内部是「永不退出」的轮询循环，必须放到独立作用域，

@@ -37,6 +37,11 @@ class TerminalFragment : Fragment() {
 
     private var terminalView: TerminalView? = null
     private var lastScreenDump = 0L
+    private var lastRows = -1
+    private var lastViewH = -1
+    private var watched = false
+    /** 是否把终端屏幕内容写入日志。默认关闭：toString() 会分配整屏长字符串，属于主线程开销。 */
+    private var sessionTapEnabled = false
     private var lastScreenText = ""
     private var session: TerminalSession? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -49,15 +54,47 @@ class TerminalFragment : Fragment() {
         val tv = view.findViewById<TerminalView>(R.id.terminal_view)
         terminalView = tv
         tv.setTerminalViewClient(viewClient)
+        // 订阅「环境就绪」事件：就绪后再启动会话（避免 rootfs 未解完导致 proot 失败）
+        scope.launch {
+            com.onestop.linux.core.EventBus.events.collect { e ->
+                if (e is com.onestop.linux.core.AppEvent.EnvironmentReady && session == null) {
+                    LogCollector.app("Terminal", "收到 EnvironmentReady，启动会话")
+                    startSession()
+                }
+            }
+        }
         tv.setTextSize(28)
 
-        if (session == null) startSession()
+        // ★ 不再立即启动会话：等环境就绪（见 MainActivity 发 EnvironmentReady）。
+        //   若环境已就绪（例如二次进入），EnvironmentReady 不会再发，故这里主动探测一次。
+        if (session == null) {
+            val ctxReady = com.onestop.linux.core.BootstrapInstaller.isInstalled(requireContext()) &&
+                    com.onestop.linux.core.RootfsInstaller.isInstalled(requireContext())
+            if (ctxReady) {
+                LogCollector.app("Terminal", "环境已就绪，直接启动会话")
+                startSession()
+            } else {
+                LogCollector.app("Terminal", "等待环境就绪后再启动会话")
+                // 等 MainActivity 的 EnvironmentReady 事件
+            }
+        }
         // ★ 性能修复（真机日志证据）：曾在此处「焦点变化触发 + postDelayed 300ms」各调一次
         //   showSoftInput，导致软键盘反复弹收 → TerminalView.updateSize() 在 68↔33 行之间抖动
         //   → 每次重排整屏并向 shell 发 SIGWINCH，表现为「敲键后很久才回显」。
         //   现在只保留「一次性 requestFocus」，键盘由用户点击或系统策略弹出（与 Termux 行为一致）。
         tv.isFocusableInTouchMode = true
         tv.requestFocus()
+        // 尺寸诊断：每次布局变化都记录行数（这是判定「谁在改高度」的关键数据）
+        if (!watched) {
+            watched = true
+            tv.addOnLayoutChangeListener { v, _, top, _, bottom, _, oldTop, _, oldBottom ->
+                val delta = (oldBottom - oldTop) - (bottom - top)
+                diagSize("layoutChange(deltaH=$delta)", tv as TerminalView)
+            }
+            tv.viewTreeObserver.addOnGlobalLayoutListener {
+                diagSize("globalLayout", tv)
+            }
+        }
     }
 
     /** 显式请求软键盘（TerminalView 是 InputConnection 宿主，但仍需一次显式触发）。 */
@@ -98,6 +135,31 @@ class TerminalFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         terminalView?.onScreenUpdated()
+        // 尺寸诊断：记录 Fragment 恢复时的视口尺寸，用于排查「行数抖动」
+        terminalView?.let {
+            LogCollector.app("SizeDiag", "onResume viewHeight=${it.height} viewWidth=${it.width} " +
+                "lines=${it.mEmulator?.mScreen?.size ?: -1}")
+        }
+    }
+
+    /**
+     * 尺寸变化诊断：记录行数变化时的视口尺寸，以及**根窗口 vs 可见区域**的差值。
+     * 差值 = 被软键盘（IME）占掉的高度。若差值在 0 与 ~1000px 之间反复切换，
+     * 说明抖动来源就是 IME 的弹收（这正是我们怀疑的根因）。
+     */
+    private fun diagSize(reason: String, tv: TerminalView) {
+        val rows = runCatching { tv.mEmulator?.mScreen?.size }.getOrNull() ?: -1
+        if (rows == lastRows && lastViewH == tv.height) return
+        lastRows = rows; lastViewH = tv.height
+        val act = activity ?: return
+        val root = act.window?.decorView
+        val visible = android.graphics.Rect().also { root?.getWindowVisibleDisplayFrame(it) }
+        val rootH = root?.height ?: -1
+        val imeHidden = rootH - visible.bottom      // >0 表示被 IME/系统栏遮挡的高度
+        LogCollector.app("SizeDiag",
+            "$reason rows=$rows viewH=${tv.height} viewW=${tv.width} " +
+            "measuredH=${tv.measuredHeight} rootH=$rootH visibleBottom=${visible.bottom} " +
+            "遮挡高度=$imeHidden imeVisible=${imeHidden > 150}")
     }
 
     override fun onDestroyView() {
@@ -147,6 +209,7 @@ class TerminalFragment : Fragment() {
             // onTextChanged 触发非常频繁（每次输出都会调），故做 2s 节流 + 内容去重，
             // 避免日志本身成为性能负担（早期 400ms 节流在快速输出时会持续写盘）。
             val now = android.os.SystemClock.elapsedRealtime()
+            if (!sessionTapEnabled) return
             if (now - lastScreenDump < 2000) return
             lastScreenDump = now
             runCatching {
