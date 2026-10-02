@@ -134,6 +134,7 @@ object LogCollector {
             File(Environment.usrLib(ctx), "libtalloc.so.2").let { sb.appendLine("usr/lib/libtalloc.so.2 存在=${it.isFile} 大小=${it.length()}") }
         }
         runCatching { sb.appendLine("可用内存: ${Runtime.getRuntime().let { "${(it.totalMemory() - it.freeMemory()) / 1048576}MB / ${it.maxMemory() / 1048576}MB" }}") }
+        sb.appendLine("会话抓屏日志(sessionTap): $sessionTapEnabled （关闭可减少主线程长字符串分配）")
         write("app", sb.toString().trimEnd())
     }
 

@@ -42,6 +42,8 @@ class TerminalFragment : Fragment() {
     private var watched = false
     /** 是否把终端屏幕内容写入日志。默认关闭：toString() 会分配整屏长字符串，属于主线程开销。 */
     private var sessionTapEnabled = false
+    /** 最近一次按键下发时刻（用于端到端延迟测量）。 */
+    @Volatile private var lastInputAt = 0L
     private var lastScreenText = ""
     private var session: TerminalSession? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -187,14 +189,20 @@ class TerminalFragment : Fragment() {
         override fun shouldUseCtrlSpaceWorkaround(): Boolean = false
         override fun isTerminalViewSelected(): Boolean = true
         override fun copyModeChanged(copyMode: Boolean) {}
-        override fun onKeyDown(keyCode: Int, e: KeyEvent, session: TerminalSession): Boolean = false
+        override fun onKeyDown(keyCode: Int, e: KeyEvent, session: TerminalSession): Boolean {
+            lastInputAt = android.os.SystemClock.elapsedRealtime()
+            return false
+        }
         override fun onKeyUp(keyCode: Int, e: KeyEvent): Boolean = false
         override fun onLongPress(event: MotionEvent): Boolean = false
         override fun readControlKey(): Boolean = false
         override fun readAltKey(): Boolean = false
         override fun readShiftKey(): Boolean = false
         override fun readFnKey(): Boolean = false
-        override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = false
+        override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean {
+            lastInputAt = android.os.SystemClock.elapsedRealtime()
+            return false
+        }
         override fun onEmulatorSet() {}
         override fun logError(tag: String, message: String) { log(tag, message) }
         override fun logWarn(tag: String, message: String) { log(tag, message) }
@@ -208,6 +216,14 @@ class TerminalFragment : Fragment() {
     // ---------------- TerminalSessionClient ----------------
     private val sessionClient = object : TerminalSessionClient {
         override fun onTextChanged(changedSession: TerminalSession) {
+            // ★ 端到端延迟测量：按键下发(spawn 时间) → PTY 回显触发 onTextChanged
+            //   目的：区分「渲染/主线程慢」与「PTY/PRoot 慢」，避免继续猜测。
+            val sentAt = lastInputAt
+            if (sentAt > 0) {
+                val dt = android.os.SystemClock.elapsedRealtime() - sentAt
+                lastInputAt = 0
+                LogCollector.app("Latency", "按键→回显 ${dt}ms")
+            }
             // 把终端屏幕内容作为「会话日志」采集：这是唯一能看到容器内发生什么的方式。
             // TerminalSession 没有公开 screen 字段，正确 API 是 getEmulator().toString()（Termux 复制全文用的就是它）。
             // onTextChanged 触发非常频繁（每次输出都会调），故做 2s 节流 + 内容去重，
